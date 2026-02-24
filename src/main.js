@@ -26,6 +26,7 @@ const rainViewport = {
 const rainAngleDeg = -10;
 const rainAngleRad = (Math.abs(rainAngleDeg) * Math.PI) / 180;
 const rainAngleSign = Math.sign(rainAngleDeg) || -1;
+let rainVisible = true;
 
 function randomInRange(min, max) {
   return min + Math.random() * (max - min);
@@ -86,7 +87,7 @@ function syncRainDrops() {
 }
 
 function updateRainOverlay(delta, elapsedTime) {
-  if (!rainOverlay || rainDrops.length === 0) return;
+  if (!rainVisible || !rainOverlay || rainDrops.length === 0) return;
   const maxY = rainViewport.height + 120;
   const minX = -220;
   rainDrops.forEach((drop) => {
@@ -1109,6 +1110,7 @@ const lightValue = document.getElementById('light-value');
 const swatches = Array.from(document.querySelectorAll('#color-swatches button'));
 const wireframeToggle = document.getElementById('wireframe-toggle');
 const gridToggle = document.getElementById('grid-toggle');
+const rainToggle = document.getElementById('rain-toggle');
 const undoButton = document.getElementById('undo-button');
 const redoButton = document.getElementById('redo-button');
 const resetButton = document.getElementById('reset-button');
@@ -1344,6 +1346,17 @@ function setGridVisible(on) {
 if (gridToggle) {
   gridToggle.addEventListener('change', (e) => {
     setGridVisible(Boolean(e.target.checked));
+  });
+}
+function setRainVisible(on) {
+  rainVisible = on;
+  if (rainOverlay) {
+    rainOverlay.style.display = rainVisible ? '' : 'none';
+  }
+}
+if (rainToggle) {
+  rainToggle.addEventListener('change', (e) => {
+    setRainVisible(Boolean(e.target.checked));
   });
 }
 if (undoButton) {
@@ -1619,4 +1632,5 @@ lastSavedColor = currentHex();
 renderRecentColors();
 setWireframeVisible(Boolean(wireframeToggle && wireframeToggle.checked));
 setGridVisible(Boolean(gridToggle && gridToggle.checked));
+setRainVisible(Boolean(rainToggle && rainToggle.checked));
 pushHistoryState(snapshotState());
