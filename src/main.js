@@ -915,8 +915,21 @@ function updateRangeFill(el) {
   const min = parseFloat(el.min ?? 0);
   const max = parseFloat(el.max ?? 100);
   const val = parseFloat(el.value ?? min);
-  const pct = max === min ? 0 : ((val - min) / (max - min)) * 100;
-  el.style.setProperty('--range-progress', `${pct}%`);
+  const ratio = max === min ? 0 : Math.min(1, Math.max(0, (val - min) / (max - min)));
+  const style = getComputedStyle(el);
+  const thumbSize = parseFloat(style.getPropertyValue('--range-thumb-size')) || 16;
+  const trackWidth = el.clientWidth || el.getBoundingClientRect().width;
+  if (!trackWidth) {
+    el.style.setProperty('--range-progress', `${ratio * 100}%`);
+    return;
+  }
+  const usableWidth = Math.max(0, trackWidth - thumbSize);
+  const fillToCenter = thumbSize * 0.5 + ratio * usableWidth;
+  el.style.setProperty('--range-progress', `${fillToCenter}px`);
+}
+
+function refreshRangeFills() {
+  rangeInputs.forEach((el) => updateRangeFill(el));
 }
 rangeInputs.forEach((el) => {
   updateRangeFill(el);
@@ -1283,6 +1296,7 @@ window.addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  refreshRangeFills();
 });
 
 // Animation loop

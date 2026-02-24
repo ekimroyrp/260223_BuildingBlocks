@@ -187,6 +187,7 @@ canvas {
 }
 
 input[type="range"] {
+  --range-thumb-size: 16px;
   width: 100%;
   appearance: none;
   -webkit-appearance: none;
@@ -208,8 +209,8 @@ input[type="range"] {
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: var(--range-thumb-size);
+  height: var(--range-thumb-size);
   border-radius: 50%;
   background: linear-gradient(135deg, #ffffff, #e6eef5);
   border: 1px solid rgba(0, 0, 0, 0.2);
@@ -218,8 +219,8 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 input[type="range"]::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+  width: var(--range-thumb-size);
+  height: var(--range-thumb-size);
   border-radius: 50%;
   background: linear-gradient(135deg, #ffffff, #e6eef5);
   border: 1px solid rgba(0, 0, 0, 0.2);
