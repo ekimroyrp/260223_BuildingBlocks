@@ -65,55 +65,64 @@ shadowPlane.position.y = -0.05;
 shadowPlane.receiveShadow = true;
 scene.add(shadowPlane);
 
-// Grid shader
+// Finite grid (15x15 cells) with a separate invisible raycast plane
+const gridCellCount = 15;
+const gridMinIndex = -Math.floor(gridCellCount / 2);
+const gridMaxIndex = gridMinIndex + gridCellCount - 1;
 let gridSize = 1.0;
-const gridMaterial = new THREE.ShaderMaterial({
-  transparent: true,
-  depthWrite: false,
-  uniforms: {
-    uGridSize: { value: gridSize },
-    uColor: { value: new THREE.Color('#ffffff') },
-    uFadeStart: { value: 30.0 },
-    uFadeEnd: { value: 120.0 },
-    uLineThickness: { value: 0.01 }
-  },
-  vertexShader: `
-    varying vec3 vWorldPosition;
-    void main() {
-      vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-      vWorldPosition = worldPosition.xyz;
-      gl_Position = projectionMatrix * viewMatrix * worldPosition;
-    }
-  `,
-  fragmentShader: `
-    uniform float uGridSize;
-    uniform vec3 uColor;
-    uniform float uFadeStart;
-    uniform float uFadeEnd;
-    uniform float uLineThickness;
-    varying vec3 vWorldPosition;
-    void main() {
-      vec2 coord = vWorldPosition.xz / uGridSize;
-      vec2 grid = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
-      float line = min(grid.x, grid.y);
-      float lineAlpha = 1.0 - smoothstep(uLineThickness, uLineThickness + 1.0, line);
-      float dist = length(cameraPosition.xz - vWorldPosition.xz);
-      float fade = 1.0 - smoothstep(uFadeStart, uFadeEnd, dist);
-      float alpha = lineAlpha * fade;
-      if (alpha <= 0.0) discard;
-      gl_FragColor = vec4(uColor, alpha);
-    }
-  `,
-  side: THREE.DoubleSide
-});
+let gridLines = null;
+let gridMesh = null;
 
-const gridMesh = new THREE.Mesh(
-  new THREE.PlaneGeometry(4000, 4000, 1, 1),
-  gridMaterial
-);
-gridMesh.rotation.x = -Math.PI / 2;
-gridMesh.position.y = 0.01;
-scene.add(gridMesh);
+function disposeMaterial(material) {
+  if (Array.isArray(material)) {
+    material.forEach((mat) => mat.dispose());
+    return;
+  }
+  material.dispose();
+}
+
+function rebuildGridMeshes() {
+  const size = gridCellCount * gridSize;
+  const centerOffset = gridSize * 0.5;
+  const previousVisibility = gridLines ? gridLines.visible : true;
+
+  if (gridLines) {
+    scene.remove(gridLines);
+    gridLines.geometry.dispose();
+    disposeMaterial(gridLines.material);
+  }
+  if (gridMesh) {
+    scene.remove(gridMesh);
+    gridMesh.geometry.dispose();
+    gridMesh.material.dispose();
+  }
+
+  gridLines = new THREE.GridHelper(size, gridCellCount, '#ffffff', '#ffffff');
+  gridLines.position.set(centerOffset, 0.01, centerOffset);
+  const lineMaterials = Array.isArray(gridLines.material) ? gridLines.material : [gridLines.material];
+  lineMaterials.forEach((mat) => {
+    mat.transparent = true;
+    mat.opacity = 0.95;
+    mat.depthWrite = false;
+  });
+  gridLines.visible = previousVisibility;
+  scene.add(gridLines);
+
+  gridMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(size, size, 1, 1),
+    new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    })
+  );
+  gridMesh.rotation.x = -Math.PI / 2;
+  gridMesh.position.set(centerOffset, 0.011, centerOffset);
+  scene.add(gridMesh);
+}
+
+rebuildGridMeshes();
 
 // Blocks
 const blocks = new Map();
@@ -151,7 +160,6 @@ scene.add(previewMesh);
 
 let blockGap = 0.0;
 const minScaleRatio = 0.05; // prevent degenerate cubes
-let buildDistance = 60; // world-units radius from center (horizontal)
 let buildRate = 10; // blocks per second
 let buildInterval = 1000 / buildRate;
 const historyLimit = 50;
@@ -161,7 +169,7 @@ let strokeActive = false;
 let actionDirty = false;
 function updateSunShadowFrustum() {
   const cam = dirLight.shadow.camera;
-  const extent = Math.max(120, buildDistance * 1.35);
+  const extent = Math.max(120, gridCellCount * gridSize * 1.5);
   cam.left = -extent;
   cam.right = extent;
   cam.top = extent;
@@ -355,8 +363,6 @@ const hitBlocks = [];
 const hitPlane = [];
 const tempIndex = { x: 0, y: 0, z: 0 };
 const tempNormal = new THREE.Vector3(0, 1, 0);
-const tempPoints = [];
-let distanceCircle;
 let resetPending = false;
 const tempMatrix = new THREE.Matrix4();
 const tempNormalMatrix = new THREE.Matrix3();
@@ -382,50 +388,17 @@ function getBlockScale() {
   return Math.max(size, gridSize * minScaleRatio);
 }
 
-function isWithinBuildDistance(index) {
-  const dx = (index.x + 0.5) * gridSize;
-  const dz = (index.z + 0.5) * gridSize;
-  return Math.hypot(dx, dz) <= buildDistance;
+function isWithinGridBounds(index) {
+  return (
+    index.x >= gridMinIndex &&
+    index.x <= gridMaxIndex &&
+    index.z >= gridMinIndex &&
+    index.z <= gridMaxIndex
+  );
 }
 
 function getAnimDamping() {
   return Math.max(minAnimDamping, buildRate);
-}
-
-function createDistanceCircle() {
-  const segments = 128;
-  tempPoints.length = 0;
-  for (let i = 0; i <= segments; i++) {
-    const theta = (i / segments) * Math.PI * 2;
-    tempPoints.push(new THREE.Vector3(Math.cos(theta), 0, Math.sin(theta)));
-  }
-  const geometry = new THREE.BufferGeometry().setFromPoints(tempPoints);
-  const material = new THREE.LineBasicMaterial({
-    color: new THREE.Color('#123c73'),
-    transparent: true,
-    opacity: 0.75,
-    depthTest: true,
-    depthWrite: false
-  });
-  distanceCircle = new THREE.LineLoop(geometry, material);
-  distanceCircle.rotation.x = -Math.PI / 2;
-  distanceCircle.position.y = 0.001;
-  distanceCircle.renderOrder = 1;
-  distanceCircle.visible = distanceVisible;
-  scene.add(distanceCircle);
-}
-
-function updateDistanceCircle() {
-  if (!distanceCircle) return;
-  const radius = Math.max(0.001, buildDistance);
-  const positions = distanceCircle.geometry.attributes.position;
-  const count = positions.count;
-  for (let i = 0; i < count; i++) {
-    const t = (i / (count - 1)) * Math.PI * 2;
-    positions.setXYZ(i, Math.cos(t) * radius, Math.sin(t) * radius, 0);
-  }
-  positions.needsUpdate = true;
-  distanceCircle.geometry.computeBoundingSphere();
 }
 
 function scheduleColorLerp(mesh, targetColor) {
@@ -499,6 +472,7 @@ const pointerState = { down: false, mode: null };
 const hoverState = { type: null, index: null, key: null };
 let hoverDirty = true;
 let isAltDown = false;
+let isShiftDown = false;
 
 let uiActive = false;
 const uiPanel = document.getElementById('ui-panel');
@@ -517,10 +491,18 @@ window.addEventListener('keydown', (event) => {
     isAltDown = true;
     setPreview(null, null);
   }
+  if (event.key === 'Shift' && !isShiftDown) {
+    isShiftDown = true;
+    hoverDirty = true;
+  }
 });
 window.addEventListener('keyup', (event) => {
   if (event.key === 'Alt') {
     isAltDown = false;
+    hoverDirty = true;
+  }
+  if (event.key === 'Shift') {
+    isShiftDown = false;
     hoverDirty = true;
   }
 });
@@ -528,6 +510,7 @@ window.addEventListener('keyup', (event) => {
 function updatePointer(event) {
   pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
   pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  isShiftDown = Boolean(event.shiftKey);
   hoverDirty = true;
 }
 
@@ -592,6 +575,8 @@ function updateHoverTarget() {
     return;
   }
 
+  const sideAddOnly = isShiftDown;
+
   if (hitBlocks.length > 0) {
     const hit = hitBlocks[0];
     const baseIndex = hit.object.userData.index;
@@ -603,9 +588,11 @@ function updateHoverTarget() {
     tempIndex.x = baseIndex.x + Math.round(tempNormal.x);
     tempIndex.y = baseIndex.y + Math.round(tempNormal.y);
     tempIndex.z = baseIndex.z + Math.round(tempNormal.z);
-    if (pointerState.mode === 'paint') {
-      setPreview(null, null);
-    } else if (isWithinBuildDistance(tempIndex)) {
+    const normalYAbs = Math.abs(tempNormal.y);
+    const hitTopOrBottom = normalYAbs >= 0.5;
+    const hitSide = normalYAbs < 0.5;
+    const canAddOnFace = sideAddOnly ? hitSide : hitTopOrBottom;
+    if (canAddOnFace && isWithinGridBounds(tempIndex)) {
       setPreview('add', { ...tempIndex }, null);
     } else {
       setPreview(null, null);
@@ -619,7 +606,7 @@ function updateHoverTarget() {
     tempIndex.x = Math.floor(point.x / gridSize);
     tempIndex.y = 0;
     tempIndex.z = Math.floor(point.z / gridSize);
-    if (isWithinBuildDistance(tempIndex)) {
+    if (!sideAddOnly && isWithinGridBounds(tempIndex)) {
       setPreview('add', { ...tempIndex }, null);
     } else {
       setPreview(null, null);
@@ -636,7 +623,7 @@ function handlePaint() {
   if (!pointerState.down || uiActive) return;
   const now = performance.now();
   if (hoverState.type === 'add' && hoverState.index) {
-    if (isWithinBuildDistance(hoverState.index) && now - lastActionTime.add >= buildInterval) {
+    if (isWithinGridBounds(hoverState.index) && now - lastActionTime.add >= buildInterval) {
       addBlockAt(hoverState.index);
       lastActionTime.add = now;
     }
@@ -704,8 +691,6 @@ const gridSlider = document.getElementById('grid-size');
 const gridValue = document.getElementById('grid-size-value');
 const gapSlider = document.getElementById('block-gap');
 const gapValue = document.getElementById('block-gap-value');
-const distanceSlider = document.getElementById('build-distance');
-const distanceValue = document.getElementById('build-distance-value');
 const buildSlider = document.getElementById('build-speed');
 const buildValue = document.getElementById('build-speed-value');
 const colorInput = document.getElementById('block-color');
@@ -722,9 +707,7 @@ const satValue = document.getElementById('sat-value');
 const lightValue = document.getElementById('light-value');
 const swatches = Array.from(document.querySelectorAll('#color-swatches button'));
 const wireframeToggle = document.getElementById('wireframe-toggle');
-const fogToggle = document.getElementById('fog-toggle');
 const gridToggle = document.getElementById('grid-toggle');
-const distanceToggle = document.getElementById('distance-toggle');
 const undoButton = document.getElementById('undo-button');
 const redoButton = document.getElementById('redo-button');
 const resetButton = document.getElementById('reset-button');
@@ -738,9 +721,7 @@ let lastHueInput = 0;
 let recentColors = swatches.map((_, idx) => (idx === 0 ? '#ff9c00' : '#ffffff'));
 let lastSavedColor = '#ffffff';
 let wireframeVisible = Boolean(wireframeToggle && wireframeToggle.checked);
-let fogVisible = Boolean(fogToggle && fogToggle.checked);
 let gridVisible = Boolean(gridToggle && gridToggle.checked);
-let distanceVisible = Boolean(distanceToggle && distanceToggle.checked);
 const rangeInputs = Array.from(document.querySelectorAll('input[type="range"]'));
 
 function updateRangeFill(el) {
@@ -758,10 +739,14 @@ rangeInputs.forEach((el) => {
 
 function setGridSize(value) {
   gridSize = value;
-  gridMaterial.uniforms.uGridSize.value = gridSize;
+  rebuildGridMeshes();
   gridValue.textContent = gridSize.toFixed(1);
   setBlockGap(blockGap); // re-clamp to new grid size and resnap
-  resnapBlocks();
+  hoverDirty = true;
+  if (!pointerState.down) {
+    updateHoverTarget();
+  }
+  updateSunShadowFrustum();
 }
 gridSlider.addEventListener('input', (event) => {
   setGridSize(parseFloat(event.target.value));
@@ -778,20 +763,6 @@ function setBlockGap(value) {
 }
 gapSlider.addEventListener('input', (event) => {
   setBlockGap(parseFloat(event.target.value));
-});
-function setBuildDistance(value) {
-  buildDistance = Math.max(0, value);
-  distanceValue.textContent = `${buildDistance.toFixed(1)}`;
-  hoverDirty = true;
-  if (!pointerState.down) {
-    updateHoverTarget();
-  }
-  updateRangeFill(distanceSlider);
-  updateDistanceCircle();
-  updateSunShadowFrustum();
-}
-distanceSlider.addEventListener('input', (event) => {
-  setBuildDistance(parseFloat(event.target.value));
 });
 function setBuildRate(value) {
   buildRate = value;
@@ -904,18 +875,11 @@ if (wireframeToggle) {
     setWireframeVisible(Boolean(e.target.checked));
   });
 }
-function setFogVisible(on) {
-  fogVisible = on;
-  scene.fog = fogVisible ? new THREE.Fog(blueprintColor, 20, 140) : null;
-}
-if (fogToggle) {
-  fogToggle.addEventListener('change', (e) => {
-    setFogVisible(Boolean(e.target.checked));
-  });
-}
 function setGridVisible(on) {
   gridVisible = on;
-  gridMesh.visible = gridVisible;
+  if (gridLines) {
+    gridLines.visible = gridVisible;
+  }
 }
 if (gridToggle) {
   gridToggle.addEventListener('change', (e) => {
@@ -944,17 +908,6 @@ if (exportButton) {
   exportButton.addEventListener('click', () => {
     finalizeStrokeHistory();
     exportBlocksToOBJ();
-  });
-}
-function setDistanceVisible(on) {
-  distanceVisible = on;
-  if (distanceCircle) {
-    distanceCircle.visible = distanceVisible;
-  }
-}
-if (distanceToggle) {
-  distanceToggle.addEventListener('change', (e) => {
-    setDistanceVisible(Boolean(e.target.checked));
   });
 }
 
@@ -1171,7 +1124,6 @@ renderer.setAnimationLoop(tick);
 // Initialize UI value and a starter block
 setGridSize(parseFloat(gridSlider.value));
 setBlockGap(parseFloat(gapSlider.value) || 0.01);
-setBuildDistance(parseFloat(distanceSlider.value));
 setBuildRate(parseFloat(buildSlider.value));
 // Initialize color from HSL defaults or input value
 const initialHex =
@@ -1192,10 +1144,6 @@ if (!Number.isNaN(initialHue) && !Number.isNaN(initialSat) && !Number.isNaN(init
 lastSavedColor = currentHex();
 renderRecentColors();
 setWireframeVisible(Boolean(wireframeToggle && wireframeToggle.checked));
-setFogVisible(Boolean(fogToggle && fogToggle.checked));
-createDistanceCircle();
-updateDistanceCircle();
 setGridVisible(Boolean(gridToggle && gridToggle.checked));
-setDistanceVisible(Boolean(distanceToggle && distanceToggle.checked));
 addBlockAt({ x: 0, y: 0, z: 0 });
 pushHistoryState(snapshotState());

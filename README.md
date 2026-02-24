@@ -1,14 +1,14 @@
 # 260223_BuildingBlocks
 
-260223_BuildingBlocks is a blueprint-styled Three.js sandbox for building, painting, undoing/redoing, and exporting voxel blocks on an infinite fading grid. It ships with a draggable translucent UI, animated add/remove/paint workflows, history controls, instructions popover, OBJ export with vertex colors, sharpened shadows, and hover-animated controls.
+260223_BuildingBlocks is a blueprint-styled Three.js sandbox for building, painting, undoing/redoing, and exporting voxel blocks on a fixed 15x15 grid. It ships with a draggable translucent UI, animated add/remove/paint workflows, history controls, instructions popover, OBJ export with vertex colors, sharpened shadows, and hover-animated controls.
 
 ## Features
-- Infinite blueprint grid with distance fade and crisp white lines
-- Draggable, blurred UI panel with sliders for block size, gap, build distance, and build speed
+- Fixed 15x15 blueprint grid with crisp white lines and no distance fade
+- Draggable, blurred UI panel with sliders for block size, gap, and build speed
 - Hover ghost preview plus animated add/remove/paint actions; undo/redo diffs snapshots and replays the same scale-up/scale-down transitions
 - Reset button that smoothly shrinks all blocks out; Export button that saves an OBJ with per-vertex colors
 - Color picker and palette popover with hover lift; instructions popover for quick control reference
-- Toggles for wireframe, grid, distance circle, and fog visibility
+- Toggles for edges and grid visibility
 - Sharpened shadow filtering with taller-range sun setup for high stacks
 - Orbit (RMB), pan (MMB), scroll zoom; UI buttons animated on hover
 
@@ -20,7 +20,8 @@
 5. Build for production: `npm run build`
 
 ## Controls
-- LMB + drag: add blocks on grid or stack onto hit faces
+- LMB + drag: add blocks on ground and on top/bottom faces only
+- Shift + LMB + drag: add blocks on side faces only
 - Alt + LMB + drag: paint blocks to the current color
 - Ctrl + LMB + drag: remove blocks under cursor
 - RMB: orbit camera

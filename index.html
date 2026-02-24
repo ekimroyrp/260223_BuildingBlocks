@@ -27,13 +27,6 @@
         </label>
         <label class="control">
           <div class="control-row">
-            <span>Brush Distance</span>
-            <span id="build-distance-value">60</span>
-          </div>
-          <input type="range" id="build-distance" min="1" max="200" step="0.1" value="60">
-        </label>
-        <label class="control">
-          <div class="control-row">
             <span>Brush Speed</span>
             <span id="build-speed-value">10</span>
           </div>
@@ -87,7 +80,7 @@
         </label>
         <label class="control">
           <div class="control-row">
-            <span>Show Wireframe</span>
+            <span>Show Edges</span>
             <label class="switch">
               <input type="checkbox" id="wireframe-toggle" checked />
               <span class="slider"></span>
@@ -99,24 +92,6 @@
             <span>Show Grid</span>
             <label class="switch">
               <input type="checkbox" id="grid-toggle" checked />
-              <span class="slider"></span>
-            </label>
-          </div>
-        </label>
-        <label class="control">
-          <div class="control-row">
-            <span>Show Distance</span>
-            <label class="switch">
-              <input type="checkbox" id="distance-toggle" checked />
-              <span class="slider"></span>
-            </label>
-          </div>
-        </label>
-        <label class="control">
-          <div class="control-row">
-            <span>Show Fog</span>
-            <label class="switch">
-              <input type="checkbox" id="fog-toggle" checked />
               <span class="slider"></span>
             </label>
           </div>
@@ -139,7 +114,8 @@
           </button>
           <div id="instructions-popover" class="color-popover hidden">
             <ul class="instructions-list">
-              <li>LMB = Add Blocks</li>
+              <li>LMB = Add Ground/Top/Bottom</li>
+              <li>SHIFT + LMB = Add Side Faces</li>
               <li>RMB = Orbit</li>
               <li>ALT + LMB = Paint Blocks</li>
               <li>CTRL + LMB = Remove Blocks</li>
