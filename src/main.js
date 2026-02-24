@@ -197,6 +197,7 @@ function rebuildGridMeshes() {
     cell.castShadow = true;
     cell.receiveShadow = true;
     const edgeLines = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+    edgeLines.name = 'border-edge';
     edgeLines.renderOrder = 4;
     cell.add(edgeLines);
     gridBorderGroup.add(cell);
@@ -939,6 +940,7 @@ rangeInputs.forEach((el) => {
 function setGridSize(value) {
   gridSize = value;
   rebuildGridMeshes();
+  setGridVisible(gridVisible);
   gridValue.textContent = gridSize.toFixed(1);
   setBlockGap(blockGap); // re-clamp to new grid size and resnap
   hoverDirty = true;
@@ -1080,6 +1082,25 @@ if (blockTypeButtons.length > 0) {
   });
 }
 
+function setGroundEdgeVisible(on) {
+  if (gridBorderGroup) {
+    gridBorderGroup.traverse((obj) => {
+      if (!(obj && obj.isLineSegments)) return;
+      obj.visible = on;
+      if (obj.material && typeof obj.material.opacity === 'number') {
+        obj.material.opacity = on ? 0.45 : 0;
+      }
+    });
+  }
+  if (gridLines) {
+    gridLines.visible = on;
+    const mats = Array.isArray(gridLines.material) ? gridLines.material : [gridLines.material];
+    mats.forEach((mat) => {
+      mat.opacity = on ? 0.95 : 0;
+    });
+  }
+}
+
 function setWireframeVisible(on) {
   wireframeVisible = on;
   blocks.forEach((mesh) => {
@@ -1089,6 +1110,7 @@ function setWireframeVisible(on) {
       wire.material.opacity = wireframeVisible ? 0.35 : 0;
     }
   });
+  setGroundEdgeVisible(wireframeVisible && gridVisible);
 }
 if (wireframeToggle) {
   wireframeToggle.addEventListener('change', (e) => {
@@ -1103,9 +1125,7 @@ function setGridVisible(on) {
   if (gridBorderGroup) {
     gridBorderGroup.visible = gridVisible;
   }
-  if (gridLines) {
-    gridLines.visible = gridVisible;
-  }
+  setGroundEdgeVisible(wireframeVisible && gridVisible);
 }
 if (gridToggle) {
   gridToggle.addEventListener('change', (e) => {
