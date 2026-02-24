@@ -1,7 +1,7 @@
 {
-  "name": "251128_blockbrush",
+  "name": "260223_buildingblocks",
   "version": "1.0.0",
-  "description": "BlockBrush is an early-stage project focused on building a block-based painting and level-building toolkit; this repository will house prototypes, tools, and documentation as the project grows.",
+  "description": "260223_BuildingBlocks is an early-stage project focused on building a block-based painting and level-building toolkit; this repository will house prototypes, tools, and documentation as the project grows.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -9,15 +9,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ekimroyrp/251128_BlockBrush.git"
+    "url": "git+https://github.com/ekimroyrp/260223_BuildingBlocks.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/ekimroyrp/251128_BlockBrush/issues"
+    "url": "https://github.com/ekimroyrp/260223_BuildingBlocks/issues"
   },
-  "homepage": "https://github.com/ekimroyrp/251128_BlockBrush#readme",
+  "homepage": "https://github.com/ekimroyrp/260223_BuildingBlocks#readme",
   "dependencies": {
     "three": "^0.181.2"
   },

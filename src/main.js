@@ -337,7 +337,7 @@ function exportBlocksToOBJ() {
   const baseNorm = blockGeometry.attributes.normal?.array;
   const baseIndex = blockGeometry.index ? blockGeometry.index.array : null;
   if (!basePos || !baseNorm) return;
-  const lines = ['# BlockBrush export'];
+  const lines = ['# 260223_BuildingBlocks export'];
   let vertexOffset = 0;
   blocks.forEach((mesh) => {
     tempMatrix.compose(mesh.position, mesh.quaternion, mesh.scale);

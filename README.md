@@ -1,6 +1,6 @@
-# 251128_BlockBrush
+# 260223_BuildingBlocks
 
-BlockBrush is a blueprint-styled Three.js sandbox for building, painting, undoing/redoing, and exporting voxel blocks on an infinite fading grid. It ships with a draggable translucent UI, animated add/remove/paint workflows, history controls, instructions popover, OBJ export with vertex colors, sharpened shadows, and hover-animated controls.
+260223_BuildingBlocks is a blueprint-styled Three.js sandbox for building, painting, undoing/redoing, and exporting voxel blocks on an infinite fading grid. It ships with a draggable translucent UI, animated add/remove/paint workflows, history controls, instructions popover, OBJ export with vertex colors, sharpened shadows, and hover-animated controls.
 
 ## Features
 - Infinite blueprint grid with distance fade and crisp white lines
@@ -13,8 +13,8 @@ BlockBrush is a blueprint-styled Three.js sandbox for building, painting, undoin
 - Orbit (MMB), pan (Shift+MMB), scroll zoom; UI buttons animated on hover
 
 ## Getting Started
-1. Clone the repository: `git clone https://github.com/ekimroyrp/251128_BlockBrush.git`
-2. Navigate into the project: `cd 251128_BlockBrush`
+1. Clone the repository: `git clone https://github.com/ekimroyrp/260223_BuildingBlocks.git`
+2. Navigate into the project: `cd 260223_BuildingBlocks`
 3. Install dependencies: `npm install`
 4. Run the dev server: `npm run dev`
 5. Build for production: `npm run build`
@@ -30,4 +30,4 @@ BlockBrush is a blueprint-styled Three.js sandbox for building, painting, undoin
 ## Deployment
 - **Local production preview:** `npm install`, then `npm run build -- --base=./` followed by `npm run preview` to inspect the compiled bundle with relative paths.
 - **Publish to GitHub Pages:** From a clean `main`, run `npm run build -- --base=./`. Checkout (or create) the `gh-pages` branch in a separate worktree, copy everything inside `dist/` plus a `.nojekyll` marker to its root, commit with a descriptive message, `git push origin gh-pages`, then switch back to `main`.
-- **Live demo:** https://ekimroyrp.github.io/251128_BlockBrush/
+- **Live demo:** https://ekimroyrp.github.io/260223_BuildingBlocks/
