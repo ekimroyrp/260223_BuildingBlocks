@@ -1,34 +1,32 @@
 # 260223_BuildingBlocks
 
-260223_BuildingBlocks is a blueprint-styled Three.js sandbox for building, painting, undoing/redoing, and exporting voxel blocks on a fixed 15x15 grid. It ships with a draggable translucent UI, animated add/remove/paint workflows, history controls, instructions popover, OBJ export with vertex colors, sharpened shadows, and hover-animated controls.
+260223_BuildingBlocks is a Three.js block-building sandbox focused on fast voxel layout, block type painting, and clean export. The app runs on a fixed 15x15 build area with layered visual borders, animated placement/removal feedback, undo/redo history, and a draggable control panel designed for quick iteration.
 
 ## Features
-- Fixed 15x15 build grid with mid-grey cell fill, plus a 1-cell grey border, a lowered 3-cell dark-grey outer border (offset by 0.25x block size), and crisp white lines
-- Draggable, blurred UI panel with sliders for block size, gap, add speed, and add stack
-- Hover ghost preview plus animated add/remove/paint actions; undo/redo diffs snapshots and replays the same scale-up/scale-down transitions
-- Reset button that smoothly shrinks all blocks out; Export button that saves an OBJ with per-vertex colors
-- Block Types list with one-click paint type selection; instructions popover for quick control reference
-- Toggles for edges and grid visibility
-- Sharpened shadow filtering with taller-range sun setup for high stacks
-- Orbit (RMB), pan (MMB), scroll zoom; UI buttons animated on hover
+- Fixed 15x15 build zone with custom ground shading, non-buildable border rings, and grid/edge overlays for clear spatial feedback.
+- Instanced block rendering for better performance while preserving per-block colors, paint updates, and placement/removal animation.
+- Add Stack workflow for vertical or horizontal multi-block placement from a single action.
+- Block Types panel with selectable type buttons and color swatches; new blocks and paint actions use the currently selected type.
+- Animated add/remove/paint transitions with undo/redo history and reset behavior.
+- Export to OBJ with vertex color data so painted types are preserved in downstream tools.
+- Draggable UI panel with controls for block size, gap, add speed, add stack, and visibility toggles.
+- Scene atmosphere effects including animated rain overlay with a dedicated Show Rain toggle.
 
 ## Getting Started
 1. Clone the repository: `git clone https://github.com/ekimroyrp/260223_BuildingBlocks.git`
 2. Navigate into the project: `cd 260223_BuildingBlocks`
 3. Install dependencies: `npm install`
-4. Run the dev server: `npm run dev`
-5. Build for production: `npm run build`
+4. Start development server: `npm run dev`
+5. Build production bundle: `npm run build`
 
 ## Controls
-- LMB + drag: add blocks on ground and on top/bottom faces only
-- Shift + LMB + drag: add blocks on side faces only
-- Add Stack slider: sets how many blocks each add action places in a stack
-- Alt + LMB + drag: paint blocks to the current color
-- New blocks and paint actions use the currently selected Block Type color
-- Ctrl + LMB + drag: remove blocks under cursor
-- RMB: orbit camera
-- MMB: pan camera
-- Scroll: zoom
+- LMB: Add Block Vertical
+- Shift + LMB: Add Block Horizontal
+- Ctrl + LMB: Remove Block
+- Alt + LMB: Change Block Type
+- RMB: Orbit Scene
+- MMB: Pan Scene
+- Scroll: Zoom Scene
 
 ## Deployment
 - **Local production preview:** `npm install`, then `npm run build -- --base=./` followed by `npm run preview` to inspect the compiled bundle with relative paths.
