@@ -379,8 +379,11 @@ rebuildGridMeshes();
 
 // Blocks
 const blocks = new Map();
-const blockGroup = new THREE.Group();
-scene.add(blockGroup);
+const blockStates = [];
+const blockWireGroup = new THREE.Group();
+scene.add(blockWireGroup);
+const blockPickGroup = new THREE.Group();
+scene.add(blockPickGroup);
 const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
 const blockEdgesGeometry = new THREE.EdgesGeometry(blockGeometry);
 const wireframeMaterial = new THREE.LineBasicMaterial({
@@ -389,16 +392,37 @@ const wireframeMaterial = new THREE.LineBasicMaterial({
   opacity: 0.35,
   depthWrite: false
 });
+const pickMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  depthWrite: false
+});
+pickMaterial.colorWrite = false;
 const baseBlockMaterialParams = {
   roughness: 0.35,
   metalness: 0.05
 };
-function makeBlockMaterial(color) {
-  return new THREE.MeshStandardMaterial({
-    color,
-    ...baseBlockMaterialParams
-  });
+const blockMaterial = new THREE.MeshStandardMaterial({
+  color: '#ffffff',
+  ...baseBlockMaterialParams
+});
+const blockBaseQuaternion = new THREE.Quaternion();
+const tempBlockScale = new THREE.Vector3(1, 1, 1);
+let blockMeshCapacity = 512;
+
+function createInstancedBlockMesh(capacity) {
+  const mesh = new THREE.InstancedMesh(blockGeometry, blockMaterial, capacity);
+  mesh.count = 0;
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
+  mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
 }
+
+let blockMesh = createInstancedBlockMesh(blockMeshCapacity);
+scene.add(blockMesh);
+
 const previewMaterial = new THREE.MeshStandardMaterial({
   color: new THREE.Color('#7ce8ff'),
   roughness: 0.4,
@@ -436,23 +460,119 @@ function updateSunShadowFrustum() {
 function markHistoryChange() {
   if (strokeActive) actionDirty = true;
 }
+function ensureBlockCapacity(required) {
+  if (required <= blockMeshCapacity) return;
+  let nextCapacity = blockMeshCapacity;
+  while (nextCapacity < required) {
+    nextCapacity *= 2;
+  }
+  const previousMesh = blockMesh;
+  const nextMesh = createInstancedBlockMesh(nextCapacity);
+  for (let i = 0; i < blockStates.length; i += 1) {
+    previousMesh.getMatrixAt(i, tempMatrix);
+    nextMesh.setMatrixAt(i, tempMatrix);
+    if (previousMesh.instanceColor) {
+      previousMesh.getColorAt(i, tempColorA);
+    } else {
+      tempColorA.set('#ffffff');
+    }
+    nextMesh.setColorAt(i, tempColorA);
+  }
+  nextMesh.count = blockStates.length;
+  nextMesh.instanceMatrix.needsUpdate = true;
+  if (nextMesh.instanceColor) {
+    nextMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    nextMesh.instanceColor.needsUpdate = true;
+  }
+  scene.remove(previousMesh);
+  blockMesh = nextMesh;
+  blockMeshCapacity = nextCapacity;
+  scene.add(blockMesh);
+}
+function composeBlockMatrix(index, scale) {
+  setPositionFromIndex(tempVec3, index);
+  tempBlockScale.setScalar(scale);
+  tempMatrix.compose(tempVec3, blockBaseQuaternion, tempBlockScale);
+}
+function writeBlockStateTransform(state) {
+  composeBlockMatrix(state.index, state.scale);
+  blockMesh.setMatrixAt(state.slot, tempMatrix);
+  if (state.wire) {
+    state.wire.position.copy(tempVec3);
+    state.wire.scale.setScalar(state.scale);
+  }
+  if (state.pick) {
+    state.pick.position.copy(tempVec3);
+    state.pick.scale.setScalar(state.scale);
+  }
+}
+function writeBlockStateColor(state) {
+  blockMesh.setColorAt(state.slot, state.color);
+  if (blockMesh.instanceColor) {
+    blockMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  }
+}
+function removeBlockStateBySlot(slot) {
+  const state = blockStates[slot];
+  if (!state) return;
+  blocks.delete(state.key);
+  if (state.wire) {
+    blockWireGroup.remove(state.wire);
+  }
+  if (state.pick) {
+    blockPickGroup.remove(state.pick);
+  }
+  const lastIndex = blockStates.length - 1;
+  if (slot !== lastIndex) {
+    const moved = blockStates[lastIndex];
+    moved.slot = slot;
+    blockStates[slot] = moved;
+    writeBlockStateTransform(moved);
+    writeBlockStateColor(moved);
+  }
+  blockStates.pop();
+  blockMesh.count = blockStates.length;
+  blockMesh.instanceMatrix.needsUpdate = true;
+  if (blockMesh.instanceColor) {
+    blockMesh.instanceColor.needsUpdate = true;
+  }
+}
+function createBlockState(index, color) {
+  const wire = new THREE.LineSegments(blockEdgesGeometry, wireframeMaterial);
+  wire.visible = wireframeVisible;
+  const pick = new THREE.Mesh(blockGeometry, pickMaterial);
+  const state = {
+    key: indexKey(index),
+    index: { ...index },
+    slot: blockStates.length,
+    scale: minScaleValue,
+    desiredScale: getBlockScale(),
+    removing: false,
+    color: color.clone(),
+    colorAnim: null,
+    wire,
+    pick
+  };
+  pick.userData.state = state;
+  blockWireGroup.add(wire);
+  blockPickGroup.add(pick);
+  return state;
+}
 function snapshotState() {
   const entries = [];
-  blocks.forEach((mesh) => {
-    if (mesh.userData?.anim?.removing) return;
+  blocks.forEach((state) => {
+    if (state.removing) return;
     entries.push({
-      index: { ...mesh.userData.index },
-      color: mesh.material.color.getHex()
+      index: { ...state.index },
+      color: state.color.getHex()
     });
   });
   return { blocks: entries };
 }
 function applySnapshot(state) {
   if (!state) {
-    blocks.forEach((mesh) => {
-      const anim = mesh.userData.anim || {};
-      anim.removing = true;
-      mesh.userData.anim = anim;
+    blocks.forEach((blockState) => {
+      blockState.removing = true;
     });
     return;
   }
@@ -461,44 +581,25 @@ function applySnapshot(state) {
     target.set(indexKey(entry.index), entry);
   });
 
-  // Remove or update existing blocks
-  blocks.forEach((mesh, key) => {
+  // Remove or update existing blocks.
+  blocks.forEach((blockState, key) => {
     const targetEntry = target.get(key);
     if (!targetEntry) {
-      const anim = mesh.userData.anim || {};
-      anim.removing = true;
-      mesh.userData.anim = anim;
+      blockState.removing = true;
       return;
     }
-    const anim = mesh.userData.anim || {};
-    anim.removing = false;
-    anim.desiredScale = getBlockScale();
-    mesh.userData.anim = anim;
+    blockState.removing = false;
+    blockState.desiredScale = getBlockScale();
     const targetColor = new THREE.Color(targetEntry.color);
-    if (!mesh.material.color.equals(targetColor)) {
-      scheduleColorLerp(mesh, targetColor);
+    if (!blockState.color.equals(targetColor)) {
+      scheduleColorLerp(blockState, targetColor);
     }
     target.delete(key);
   });
 
-  // Add new blocks that are in target but not currently present
+  // Add new blocks that are in target but not currently present.
   target.forEach((entry) => {
-    const key = indexKey(entry.index);
-    const material = makeBlockMaterial(new THREE.Color(entry.color));
-    const mesh = new THREE.Mesh(blockGeometry, material);
-    const wire = new THREE.LineSegments(blockEdgesGeometry, wireframeMaterial);
-    wire.name = 'wireframe';
-    wire.visible = wireframeVisible;
-    mesh.add(wire);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.userData.index = { ...entry.index };
-    mesh.userData.key = key;
-    mesh.userData.anim = { removing: false, desiredScale: getBlockScale() };
-    mesh.scale.setScalar(minScaleValue);
-    setPositionFromIndex(mesh.position, entry.index);
-    blocks.set(key, mesh);
-    blockGroup.add(mesh);
+    addBlockAt(entry.index, new THREE.Color(entry.color), false);
   });
   resnapBlocks();
   hoverDirty = true;
@@ -544,10 +645,8 @@ function resetBlocks() {
   strokeActive = true;
   actionDirty = true;
   resetPending = true;
-  blocks.forEach((mesh) => {
-    const anim = mesh.userData.anim || {};
-    anim.removing = true;
-    mesh.userData.anim = anim;
+  blocks.forEach((state) => {
+    state.removing = true;
   });
 }
 function exportBlocksToOBJ() {
@@ -557,10 +656,11 @@ function exportBlocksToOBJ() {
   if (!basePos || !baseNorm) return;
   const lines = ['# 260223_BuildingBlocks export'];
   let vertexOffset = 0;
-  blocks.forEach((mesh) => {
-    tempMatrix.compose(mesh.position, mesh.quaternion, mesh.scale);
+  blocks.forEach((state) => {
+    if (state.removing) return;
+    composeBlockMatrix(state.index, state.scale);
     tempNormalMatrix.getNormalMatrix(tempMatrix);
-    const { r, g, b } = mesh.material.color;
+    const { r, g, b } = state.color;
     const r255 = Math.round(r * 255);
     const g255 = Math.round(g * 255);
     const b255 = Math.round(b * 255);
@@ -655,64 +755,69 @@ function getAnimDamping() {
   return Math.max(minAnimDamping, buildRate);
 }
 
-function scheduleColorLerp(mesh, targetColor) {
-  if (!mesh) return;
-  if (!mesh.userData.colorAnim) {
-    mesh.userData.colorAnim = {
-      from: mesh.material.color.clone(),
+function scheduleColorLerp(state, targetColor) {
+  if (!state) return;
+  if (!state.colorAnim) {
+    state.colorAnim = {
+      from: state.color.clone(),
       to: targetColor.clone(),
       t: 0
     };
   } else {
-    mesh.userData.colorAnim.from.copy(mesh.material.color);
-    mesh.userData.colorAnim.to.copy(targetColor);
-    mesh.userData.colorAnim.t = 0;
+    state.colorAnim.from.copy(state.color);
+    state.colorAnim.to.copy(targetColor);
+    state.colorAnim.t = 0;
   }
 }
 
-function addBlockAt(index) {
+function addBlockAt(index, color = currentColor, markDirty = true) {
   const key = indexKey(index);
   if (blocks.has(key)) return;
-  const material = makeBlockMaterial(currentColor.clone());
-  const mesh = new THREE.Mesh(blockGeometry, material);
-  const wire = new THREE.LineSegments(blockEdgesGeometry, wireframeMaterial);
-  wire.name = 'wireframe';
-  wire.visible = wireframeVisible;
-  mesh.add(wire);
-  mesh.scale.setScalar(minScaleValue);
-  setPositionFromIndex(mesh.position, index);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  mesh.userData.index = { ...index };
-  mesh.userData.key = key;
-  mesh.userData.anim = { removing: false, desiredScale: getBlockScale() };
-  blocks.set(key, mesh);
-  blockGroup.add(mesh);
-  markHistoryChange();
+  ensureBlockCapacity(blockStates.length + 1);
+  const state = createBlockState(index, color);
+  blocks.set(key, state);
+  blockStates.push(state);
+  writeBlockStateTransform(state);
+  writeBlockStateColor(state);
+  blockMesh.count = blockStates.length;
+  blockMesh.instanceMatrix.needsUpdate = true;
+  if (blockMesh.instanceColor) {
+    blockMesh.instanceColor.needsUpdate = true;
+  }
+  if (markDirty) {
+    markHistoryChange();
+  }
 }
 
 function removeBlockAt(key) {
-  const mesh = blocks.get(key);
-  if (!mesh) return;
-  const anim = mesh.userData.anim || {};
-  anim.removing = true;
-  mesh.userData.anim = anim;
+  const state = blocks.get(key);
+  if (!state) return;
+  state.removing = true;
   markHistoryChange();
 }
 
+function getStateFromIntersection(hit) {
+  if (!hit) return null;
+  const stateFromObject = hit.object?.userData?.state;
+  if (stateFromObject) return stateFromObject;
+  if (typeof hit.instanceId !== 'number') return null;
+  if (hit.instanceId < 0 || hit.instanceId >= blockStates.length) return null;
+  return blockStates[hit.instanceId];
+}
+
 function resnapBlocks() {
-  blocks.forEach((mesh) => {
-    const idx = mesh.userData.index;
-    const anim = mesh.userData.anim || {};
-    anim.desiredScale = getBlockScale();
-    mesh.userData.anim = anim;
-    setPositionFromIndex(mesh.position, idx);
-    const wire = mesh.getObjectByName('wireframe');
-    if (wire) {
-      wire.visible = wireframeVisible;
-      wire.material.opacity = wireframeVisible ? 0.35 : 0;
+  let matrixDirty = false;
+  blocks.forEach((state) => {
+    state.desiredScale = getBlockScale();
+    if (state.wire) {
+      state.wire.visible = wireframeVisible;
     }
+    writeBlockStateTransform(state);
+    matrixDirty = true;
   });
+  if (matrixDirty) {
+    blockMesh.instanceMatrix.needsUpdate = true;
+  }
   if (previewMesh.visible && hoverState.index) {
     previewMesh.scale.setScalar(getBlockScale());
     setPositionFromIndex(previewMesh.position, hoverState.index);
@@ -803,13 +908,18 @@ function updateHoverTarget() {
   raycaster.setFromCamera(pointer, camera);
   hitBlocks.length = 0;
   hitPlane.length = 0;
-  raycaster.intersectObjects(blockGroup.children, false, hitBlocks);
+  raycaster.intersectObjects(blockPickGroup.children, false, hitBlocks);
   raycaster.intersectObject(gridMesh, false, hitPlane);
 
   if (pointerState.mode === 'remove') {
     if (hitBlocks.length > 0) {
       const hit = hitBlocks[0];
-      setPreview('remove', { ...hit.object.userData.index }, hit.object.userData.key);
+      const state = getStateFromIntersection(hit);
+      if (state) {
+        setPreview('remove', { ...state.index }, state.key);
+      } else {
+        setPreview(null, null);
+      }
     } else {
       setPreview(null, null);
     }
@@ -820,11 +930,16 @@ function updateHoverTarget() {
   if (pointerState.mode === 'paint') {
     if (hitBlocks.length > 0) {
       const hit = hitBlocks[0];
-      hoverState.type = 'paint';
-      hoverState.index = { ...hit.object.userData.index };
-      hoverState.key = hit.object.userData.key;
-      hoverState.addDirection = null;
-      previewMesh.visible = false;
+      const state = getStateFromIntersection(hit);
+      if (state) {
+        hoverState.type = 'paint';
+        hoverState.index = { ...state.index };
+        hoverState.key = state.key;
+        hoverState.addDirection = null;
+        previewMesh.visible = false;
+      } else {
+        setPreview(null, null);
+      }
     } else {
       setPreview(null, null);
     }
@@ -836,7 +951,13 @@ function updateHoverTarget() {
 
   if (hitBlocks.length > 0) {
     const hit = hitBlocks[0];
-    const baseIndex = hit.object.userData.index;
+    const state = getStateFromIntersection(hit);
+    if (!state) {
+      setPreview(null, null);
+      hoverDirty = false;
+      return;
+    }
+    const baseIndex = state.index;
     if (hit.face && hit.face.normal) {
       tempNormal.copy(hit.face.normal);
     } else {
@@ -912,9 +1033,9 @@ function handlePaint() {
     }
   } else if (hoverState.type === 'paint' && hoverState.key) {
     if (now - lastActionTime.paint >= buildInterval) {
-      const mesh = blocks.get(hoverState.key);
-      if (mesh) {
-        scheduleColorLerp(mesh, currentColor);
+      const state = blocks.get(hoverState.key);
+      if (state) {
+        scheduleColorLerp(state, currentColor);
         markHistoryChange();
       }
       lastActionTime.paint = now;
@@ -1197,11 +1318,10 @@ function setGroundEdgeVisible(on) {
 
 function setWireframeVisible(on) {
   wireframeVisible = on;
-  blocks.forEach((mesh) => {
-    const wire = mesh.getObjectByName('wireframe');
-    if (wire) {
-      wire.visible = wireframeVisible;
-      wire.material.opacity = wireframeVisible ? 0.35 : 0;
+  wireframeMaterial.opacity = wireframeVisible ? 0.35 : 0;
+  blocks.forEach((state) => {
+    if (state.wire) {
+      state.wire.visible = wireframeVisible;
     }
   });
   setGroundEdgeVisible(wireframeVisible && gridVisible);
@@ -1418,35 +1538,47 @@ window.addEventListener('resize', () => {
 let lastTime = performance.now();
 function updateAnimations(delta) {
   const damping = getAnimDamping(); // higher = snappier, tied to buildRate
-  blockGroup.children.forEach((mesh) => {
-    const anim = mesh.userData.anim;
-    const colorAnim = mesh.userData.colorAnim;
-    const targetScale = anim
-      ? anim.removing
-        ? 0
-        : anim.desiredScale ?? getBlockScale()
-      : getBlockScale();
-    const next = THREE.MathUtils.damp(mesh.scale.x, targetScale, damping, delta);
-    mesh.scale.setScalar(Math.max(next, minScaleValue));
+  let matrixDirty = false;
+  let colorDirty = false;
+  for (let i = 0; i < blockStates.length; ) {
+    const state = blockStates[i];
+    const targetScale = state.removing ? 0 : state.desiredScale ?? getBlockScale();
+    const next = THREE.MathUtils.damp(state.scale, targetScale, damping, delta);
+    state.scale = Math.max(next, minScaleValue);
 
-    if (anim?.removing && next <= 0.02) {
-      blockGroup.remove(mesh);
-      blocks.delete(mesh.userData.key);
-    } else if (anim && !anim.removing && Math.abs(next - targetScale) < 0.0005) {
-      mesh.scale.setScalar(targetScale);
+    if (state.removing && next <= 0.02) {
+      removeBlockStateBySlot(i);
+      matrixDirty = true;
+      colorDirty = true;
+      continue;
+    }
+    if (!state.removing && Math.abs(next - targetScale) < 0.0005) {
+      state.scale = targetScale;
     }
 
-    if (colorAnim) {
+    if (state.colorAnim) {
       const lerpRate = Math.max(1.2, buildRate * 0.6); // faster paint transition
-      colorAnim.t = Math.min(1, colorAnim.t + delta * lerpRate);
-      mesh.material.color.lerpColors(colorAnim.from, colorAnim.to, colorAnim.t);
-      if (colorAnim.t >= 1 - 1e-4) {
-        mesh.material.color.copy(colorAnim.to);
-        delete mesh.userData.colorAnim;
+      state.colorAnim.t = Math.min(1, state.colorAnim.t + delta * lerpRate);
+      state.color.lerpColors(state.colorAnim.from, state.colorAnim.to, state.colorAnim.t);
+      writeBlockStateColor(state);
+      colorDirty = true;
+      if (state.colorAnim.t >= 1 - 1e-4) {
+        state.color.copy(state.colorAnim.to);
+        state.colorAnim = null;
       }
     }
-  });
-  if (resetPending && blockGroup.children.length === 0) {
+
+    writeBlockStateTransform(state);
+    matrixDirty = true;
+    i += 1;
+  }
+  if (matrixDirty) {
+    blockMesh.instanceMatrix.needsUpdate = true;
+  }
+  if (colorDirty && blockMesh.instanceColor) {
+    blockMesh.instanceColor.needsUpdate = true;
+  }
+  if (resetPending && blockStates.length === 0) {
     pushHistoryState(snapshotState(), true);
     strokeActive = false;
     actionDirty = false;
