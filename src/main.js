@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import './style.css';
 
 const container = document.getElementById('app');
+const rainOverlay = document.getElementById('rain-overlay');
 const blueprintColor = new THREE.Color('#000000');
 
 // Renderer
@@ -16,6 +17,99 @@ renderer.toneMappingExposure = 1.35;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 container.appendChild(renderer.domElement);
+
+const rainDrops = [];
+const rainViewport = {
+  width: window.innerWidth,
+  height: window.innerHeight
+};
+const rainAngleDeg = -10;
+const rainAngleRad = (Math.abs(rainAngleDeg) * Math.PI) / 180;
+const rainAngleSign = Math.sign(rainAngleDeg) || -1;
+
+function randomInRange(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function getRainDropTargetCount() {
+  const area = rainViewport.width * rainViewport.height;
+  return Math.max(90, Math.min(260, Math.round(area / 9000)));
+}
+
+function resetRainDrop(drop, randomY = false) {
+  const spawnPadX = rainViewport.width * 0.25;
+  const spawnPadY = rainViewport.height * 0.35;
+  drop.x = randomInRange(-spawnPadX, rainViewport.width + spawnPadX);
+  drop.y = randomY ? randomInRange(-spawnPadY, rainViewport.height + spawnPadY) : randomInRange(-spawnPadY, -12);
+  const fallSpeed = randomInRange(500, 940);
+  drop.speedY = fallSpeed;
+  drop.speedX = Math.tan(rainAngleRad) * fallSpeed * rainAngleSign;
+  drop.angleDeg = (-Math.atan2(drop.speedX, drop.speedY) * 180) / Math.PI;
+  drop.length = randomInRange(30, 100);
+  drop.width = randomInRange(0.8, 1.45);
+  drop.opacity = randomInRange(0.18, 0.78);
+  drop.flickerSpeed = randomInRange(3.2, 8.6);
+  drop.flickerPhase = randomInRange(0, Math.PI * 2);
+  drop.el.style.setProperty('--rain-length', `${drop.length.toFixed(1)}px`);
+  drop.el.style.setProperty('--rain-width', `${drop.width.toFixed(2)}px`);
+}
+
+function syncRainDrops() {
+  if (!rainOverlay) return;
+  const targetCount = getRainDropTargetCount();
+  while (rainDrops.length < targetCount) {
+    const el = document.createElement('span');
+    el.className = 'rain-drop';
+    rainOverlay.appendChild(el);
+    const drop = {
+      el,
+      x: 0,
+      y: 0,
+      speedX: 0,
+      speedY: 0,
+      angleDeg: 0,
+      length: 0,
+      width: 0,
+      opacity: 0,
+      flickerSpeed: 0,
+      flickerPhase: 0
+    };
+    resetRainDrop(drop, true);
+    rainDrops.push(drop);
+  }
+  while (rainDrops.length > targetCount) {
+    const drop = rainDrops.pop();
+    if (drop && drop.el && drop.el.parentElement === rainOverlay) {
+      rainOverlay.removeChild(drop.el);
+    }
+  }
+}
+
+function updateRainOverlay(delta, elapsedTime) {
+  if (!rainOverlay || rainDrops.length === 0) return;
+  const maxY = rainViewport.height + 120;
+  const minX = -220;
+  rainDrops.forEach((drop) => {
+    drop.x += drop.speedX * delta;
+    drop.y += drop.speedY * delta;
+    if (drop.y > maxY || drop.x < minX) {
+      resetRainDrop(drop);
+    }
+    const flicker = 0.82 + Math.sin(elapsedTime * drop.flickerSpeed + drop.flickerPhase) * 0.18;
+    drop.el.style.opacity = `${Math.max(0.08, Math.min(1, drop.opacity * flicker)).toFixed(3)}`;
+    drop.el.style.left = `${drop.x.toFixed(2)}px`;
+    drop.el.style.top = `${drop.y.toFixed(2)}px`;
+    drop.el.style.transform = `rotate(${drop.angleDeg.toFixed(2)}deg)`;
+  });
+}
+
+function resizeRainOverlay() {
+  rainViewport.width = window.innerWidth;
+  rainViewport.height = window.innerHeight;
+  syncRainDrops();
+}
+
+syncRainDrops();
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -1316,6 +1410,7 @@ window.addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  resizeRainOverlay();
   refreshRangeFills();
 });
 
@@ -1365,6 +1460,7 @@ function tick() {
   const delta = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
   updateAnimations(delta);
+  updateRainOverlay(delta, now * 0.001);
   if (hoverDirty && !pointerState.down) {
     updateHoverTarget();
   }
