@@ -320,6 +320,7 @@ let blockGap = 0.0;
 const minScaleRatio = 0.05; // prevent degenerate cubes
 let buildRate = 10; // blocks per second
 let buildInterval = 1000 / buildRate;
+let addStack = 1;
 const historyLimit = 50;
 const history = [];
 const redoStack = [];
@@ -627,7 +628,7 @@ function resnapBlocks() {
 const pointer = new THREE.Vector2();
 const raycaster = new THREE.Raycaster();
 const pointerState = { down: false, mode: null };
-const hoverState = { type: null, index: null, key: null };
+const hoverState = { type: null, index: null, key: null, addDirection: null };
 let hoverDirty = true;
 let isAltDown = false;
 let isShiftDown = false;
@@ -672,17 +673,19 @@ function updatePointer(event) {
   hoverDirty = true;
 }
 
-function setPreview(type, targetIndex, targetKey) {
+function setPreview(type, targetIndex, targetKey, addDirection) {
   if (!targetIndex) {
     previewMesh.visible = false;
     hoverState.type = null;
     hoverState.index = null;
     hoverState.key = null;
+    hoverState.addDirection = null;
     return;
   }
   hoverState.type = type;
   hoverState.index = targetIndex;
   hoverState.key = targetKey || null;
+  hoverState.addDirection = addDirection ? { ...addDirection } : null;
   previewMesh.visible = true;
   previewMesh.scale.setScalar(getBlockScale());
   setPositionFromIndex(previewMesh.position, targetIndex);
@@ -725,6 +728,7 @@ function updateHoverTarget() {
       hoverState.type = 'paint';
       hoverState.index = { ...hit.object.userData.index };
       hoverState.key = hit.object.userData.key;
+      hoverState.addDirection = null;
       previewMesh.visible = false;
     } else {
       setPreview(null, null);
@@ -750,8 +754,15 @@ function updateHoverTarget() {
     const hitTopOrBottom = normalYAbs >= 0.5;
     const hitSide = normalYAbs < 0.5;
     const canAddOnFace = sideAddOnly ? hitSide : hitTopOrBottom;
+    const addDirection = sideAddOnly
+      ? {
+          x: Math.round(tempNormal.x),
+          y: Math.round(tempNormal.y),
+          z: Math.round(tempNormal.z)
+        }
+      : { x: 0, y: 1, z: 0 };
     if (canAddOnFace && isWithinGridBounds(tempIndex)) {
-      setPreview('add', { ...tempIndex }, null);
+      setPreview('add', { ...tempIndex }, null, addDirection);
     } else {
       setPreview(null, null);
     }
@@ -765,7 +776,7 @@ function updateHoverTarget() {
     tempIndex.y = 0;
     tempIndex.z = Math.floor(point.z / gridSize);
     if (!sideAddOnly && isWithinGridBounds(tempIndex)) {
-      setPreview('add', { ...tempIndex }, null);
+      setPreview('add', { ...tempIndex }, null, { x: 0, y: 1, z: 0 });
     } else {
       setPreview(null, null);
     }
@@ -782,7 +793,21 @@ function handlePaint() {
   const now = performance.now();
   if (hoverState.type === 'add' && hoverState.index) {
     if (isWithinGridBounds(hoverState.index) && now - lastActionTime.add >= buildInterval) {
-      addBlockAt(hoverState.index);
+      const direction = hoverState.addDirection || { x: 0, y: 1, z: 0 };
+      const dirX = Math.sign(direction.x || 0);
+      const dirY = Math.sign(direction.y || 0);
+      const dirZ = Math.sign(direction.z || 0);
+      const hasDirection = dirX !== 0 || dirY !== 0 || dirZ !== 0;
+      for (let i = 0; i < addStack; i += 1) {
+        const step = hasDirection ? i : 0;
+        const target = {
+          x: hoverState.index.x + dirX * step,
+          y: hoverState.index.y + dirY * step,
+          z: hoverState.index.z + dirZ * step
+        };
+        if (!isWithinGridBounds(target)) break;
+        addBlockAt(target);
+      }
       lastActionTime.add = now;
     }
   } else if (hoverState.type === 'remove' && hoverState.key) {
@@ -851,6 +876,8 @@ const gapSlider = document.getElementById('block-gap');
 const gapValue = document.getElementById('block-gap-value');
 const buildSlider = document.getElementById('build-speed');
 const buildValue = document.getElementById('build-speed-value');
+const stackSlider = document.getElementById('add-stack');
+const stackValue = document.getElementById('add-stack-value');
 const colorInput = document.getElementById('block-color');
 const colorValue = document.getElementById('block-color-value');
 const colorChip = document.getElementById('block-color-chip');
@@ -927,6 +954,17 @@ function setBuildRate(value) {
   buildInterval = 1000 / buildRate;
   buildValue.textContent = `${buildRate.toFixed(1)}`;
   updateRangeFill(buildSlider);
+}
+function setAddStack(value) {
+  const clamped = Math.max(1, Math.min(20, Math.round(value)));
+  addStack = clamped;
+  if (stackValue) {
+    stackValue.textContent = `${clamped}`;
+  }
+  if (stackSlider) {
+    stackSlider.value = `${clamped}`;
+    updateRangeFill(stackSlider);
+  }
 }
 const tempHSLColor = new THREE.Color();
 function updateSliderGradients() {
@@ -1181,6 +1219,11 @@ window.addEventListener('keydown', (event) => {
 buildSlider.addEventListener('input', (event) => {
   setBuildRate(parseFloat(event.target.value));
 });
+if (stackSlider) {
+  stackSlider.addEventListener('input', (event) => {
+    setAddStack(parseFloat(event.target.value));
+  });
+}
 
 // Panel dragging
 const handles = [
@@ -1281,6 +1324,7 @@ renderer.setAnimationLoop(tick);
 setGridSize(parseFloat(gridSlider.value));
 setBlockGap(parseFloat(gapSlider.value) || 0.01);
 setBuildRate(parseFloat(buildSlider.value));
+setAddStack(parseFloat(stackSlider ? stackSlider.value : 1));
 // Initialize color from HSL defaults or input value
 const initialHex =
   colorInput && colorInput.value ? colorInput.value : '#ffffff';

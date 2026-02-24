@@ -4,7 +4,7 @@
 
 ## Features
 - Fixed 15x15 build grid with tan cell fill, plus a 1-cell grey border, a lowered 3-cell dark-grey outer border (offset by 0.25x block size), and crisp white lines
-- Draggable, blurred UI panel with sliders for block size, gap, and add speed
+- Draggable, blurred UI panel with sliders for block size, gap, add speed, and add stack
 - Hover ghost preview plus animated add/remove/paint actions; undo/redo diffs snapshots and replays the same scale-up/scale-down transitions
 - Reset button that smoothly shrinks all blocks out; Export button that saves an OBJ with per-vertex colors
 - Color picker and palette popover with hover lift; instructions popover for quick control reference
@@ -22,6 +22,7 @@
 ## Controls
 - LMB + drag: add blocks on ground and on top/bottom faces only
 - Shift + LMB + drag: add blocks on side faces only
+- Add Stack slider: sets how many blocks each add action places in a stack
 - Alt + LMB + drag: paint blocks to the current color
 - Ctrl + LMB + drag: remove blocks under cursor
 - RMB: orbit camera
