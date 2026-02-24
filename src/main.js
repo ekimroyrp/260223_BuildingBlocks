@@ -74,7 +74,7 @@ const gridVisualCellCount =
   gridCellCount + (gridInnerBorderCellCount + gridOuterBorderCellCount) * 2;
 const gridMinIndex = -Math.floor(gridCellCount / 2);
 const gridMaxIndex = gridMinIndex + gridCellCount - 1;
-const gridFillColor = new THREE.Color('#d2b48c');
+const gridFillColor = new THREE.Color('#6e6e6e');
 const gridInnerBorderColor = new THREE.Color('#8d8d8d');
 const gridOuterBorderColor = new THREE.Color('#4f4f4f');
 let gridSize = 1.0;
@@ -514,7 +514,6 @@ function exportBlocksToOBJ() {
 const lastActionTime = { add: -Infinity, remove: -Infinity, paint: -Infinity };
 const minScaleValue = 0.0001;
 const minAnimDamping = 2;
-const addBlockColor = new THREE.Color('#ffffff');
 const currentColor = new THREE.Color('#ffffff');
 const tempColorA = new THREE.Color();
 const tempColorB = new THREE.Color();
@@ -579,7 +578,7 @@ function scheduleColorLerp(mesh, targetColor) {
 function addBlockAt(index) {
   const key = indexKey(index);
   if (blocks.has(key)) return;
-  const material = makeBlockMaterial(addBlockColor.clone());
+  const material = makeBlockMaterial(currentColor.clone());
   const mesh = new THREE.Mesh(blockGeometry, material);
   const wire = new THREE.LineSegments(blockEdgesGeometry, wireframeMaterial);
   wire.name = 'wireframe';
