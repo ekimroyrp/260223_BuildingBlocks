@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>260223_BuildingBlocks</title>
+  <script type="module" crossorigin src="./assets/index-BC-1RnR-.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-B5zCpiRa.css">
+</head>
+<body>
+  <div id="app">
+    <div id="rain-overlay" aria-hidden="true"></div>
+    <div id="ui-panel">
+      <div id="ui-handle"></div>
+      <div class="ui-body">
+        <label class="control">
+          <div class="control-row">
+            <span>Block Size</span>
+            <span id="grid-size-value">1.0</span>
+          </div>
+          <input type="range" id="grid-size" min="0.5" max="5" step="0.1" value="1">
+        </label>
+        <label class="control">
+          <div class="control-row">
+            <span>Block Gap</span>
+            <span id="block-gap-value">0.00</span>
+          </div>
+          <input type="range" id="block-gap" min="0" max="0.5" step="0.01" value="0.01">
+        </label>
+        <label class="control">
+          <div class="control-row">
+            <span>Add Speed</span>
+            <span id="build-speed-value">10</span>
+          </div>
+          <input type="range" id="build-speed" min="1" max="100" step="0.1" value="10">
+        </label>
+        <label class="control">
+          <div class="control-row">
+            <span>Add Stack</span>
+            <span id="add-stack-value">1</span>
+          </div>
+          <input type="range" id="add-stack" min="1" max="20" step="1" value="1">
+        </label>
+        <label class="control">
+          <div class="control-row">
+            <span>Block Types</span>
+          </div>
+          <div class="block-types-list" id="block-types-list">
+            <button type="button" class="block-type-button active" data-color="#9CCFC7">
+              <span class="block-type-name">Type 1</span>
+              <span class="block-type-swatch" style="--type-color:#9CCFC7"></span>
+            </button>
+            <button type="button" class="block-type-button" data-color="#B29BE6">
+              <span class="block-type-name">Type 2</span>
+              <span class="block-type-swatch" style="--type-color:#B29BE6"></span>
+            </button>
+            <button type="button" class="block-type-button" data-color="#DBCFA1">
+              <span class="block-type-name">Type 3</span>
+              <span class="block-type-swatch" style="--type-color:#DBCFA1"></span>
+            </button>
+            <button type="button" class="block-type-button" data-color="#E9B99A">
+              <span class="block-type-name">Type 4</span>
+              <span class="block-type-swatch" style="--type-color:#E9B99A"></span>
+            </button>
+            <button type="button" class="block-type-button" data-color="#DDA0AA">
+              <span class="block-type-name">Type 5</span>
+              <span class="block-type-swatch" style="--type-color:#DDA0AA"></span>
+            </button>
+          </div>
+          <input type="color" id="block-color" value="#9CCFC7" hidden>
+          <span id="block-color-value" class="color-hex visually-hidden"></span>
+        </label>
+        <label class="control">
+          <div class="control-row">
+            <span>Show Edges</span>
+            <label class="switch">
+              <input type="checkbox" id="wireframe-toggle" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+        </label>
+        <label class="control">
+          <div class="control-row">
+            <span>Show Ground</span>
+            <label class="switch">
+              <input type="checkbox" id="grid-toggle" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+        </label>
+        <label class="control">
+          <div class="control-row">
+            <span>Show Rain</span>
+            <label class="switch">
+              <input type="checkbox" id="rain-toggle" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+        </label>
+        <div class="control history-control">
+          <div class="history-buttons">
+            <button type="button" id="undo-button" class="pill-button">Undo</button>
+            <button type="button" id="redo-button" class="pill-button">Redo</button>
+          </div>
+        </div>
+        <div class="control history-control">
+          <div class="history-buttons">
+            <button type="button" id="reset-button" class="pill-button">Reset</button>
+            <button type="button" id="export-button" class="pill-button">Export</button>
+          </div>
+        </div>
+        <div class="control instructions-control">
+          <button type="button" id="instructions-button" class="pill-button instruction-button">
+            Instructions
+          </button>
+          <div id="instructions-popover" class="color-popover hidden">
+            <ul class="instructions-list">
+              <li>LMB = Add Block Vertical</li>
+              <li>Shift + LMB = Add Block Horizontal</li>
+              <li>Ctrl + LMB = Remove Block</li>
+              <li>Alt + LMB = Change Block Type</li>
+              <li>RMB = Orbit Scene</li>
+              <li>MMB = Pan Scene</li>
+              <li>Scroll = Zoom Scene</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div id="ui-handle-bottom"></div>
+    </div>
+  </div>
+</body>
+</html>
