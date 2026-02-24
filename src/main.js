@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import './style.css';
 
 const container = document.getElementById('app');
-const blueprintColor = new THREE.Color('#6ca6df');
+const blueprintColor = new THREE.Color('#000000');
 
 // Renderer
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -63,14 +63,24 @@ const shadowPlane = new THREE.Mesh(
 shadowPlane.rotation.x = -Math.PI / 2;
 shadowPlane.position.y = -0.05;
 shadowPlane.receiveShadow = true;
+shadowPlane.material.depthWrite = false;
 scene.add(shadowPlane);
 
-// Finite grid (15x15 cells) with a separate invisible raycast plane
+// Finite build grid (15x15) with visual borders and separate invisible raycast plane
 const gridCellCount = 15;
+const gridInnerBorderCellCount = 1;
+const gridOuterBorderCellCount = 3;
+const gridVisualCellCount =
+  gridCellCount + (gridInnerBorderCellCount + gridOuterBorderCellCount) * 2;
 const gridMinIndex = -Math.floor(gridCellCount / 2);
 const gridMaxIndex = gridMinIndex + gridCellCount - 1;
+const gridFillColor = new THREE.Color('#d2b48c');
+const gridInnerBorderColor = new THREE.Color('#8d8d8d');
+const gridOuterBorderColor = new THREE.Color('#4f4f4f');
 let gridSize = 1.0;
 let gridLines = null;
+let gridFillMesh = null;
+let gridBorderGroup = null;
 let gridMesh = null;
 
 function disposeMaterial(material) {
@@ -82,7 +92,16 @@ function disposeMaterial(material) {
 }
 
 function rebuildGridMeshes() {
-  const size = gridCellCount * gridSize;
+  const buildSize = gridCellCount * gridSize;
+  const outerBorderDrop = gridSize * 0.25;
+  const innerBorderTopY = 0.003;
+  const innerBorderBottomY = -outerBorderDrop;
+  const innerBorderHeight = Math.max(0.0001, innerBorderTopY - innerBorderBottomY);
+  const innerBorderCenterY = innerBorderBottomY + innerBorderHeight * 0.5;
+  const innerBorderMinIndex = gridMinIndex - gridInnerBorderCellCount;
+  const innerBorderMaxIndex = gridMaxIndex + gridInnerBorderCellCount;
+  const outerBorderMinIndex = innerBorderMinIndex - gridOuterBorderCellCount;
+  const outerBorderMaxIndex = innerBorderMaxIndex + gridOuterBorderCellCount;
   const centerOffset = gridSize * 0.5;
   const previousVisibility = gridLines ? gridLines.visible : true;
 
@@ -91,13 +110,152 @@ function rebuildGridMeshes() {
     gridLines.geometry.dispose();
     disposeMaterial(gridLines.material);
   }
+  if (gridFillMesh) {
+    scene.remove(gridFillMesh);
+    gridFillMesh.geometry.dispose();
+    disposeMaterial(gridFillMesh.material);
+  }
+  if (gridBorderGroup) {
+    scene.remove(gridBorderGroup);
+    const disposables = gridBorderGroup.userData.disposables;
+    if (Array.isArray(disposables)) {
+      disposables.forEach((resource) => resource.dispose());
+    } else {
+      const geometries = new Set();
+      const materials = new Set();
+      gridBorderGroup.traverse((obj) => {
+        if (!obj.isMesh) return;
+        geometries.add(obj.geometry);
+        if (Array.isArray(obj.material)) {
+          obj.material.forEach((mat) => materials.add(mat));
+        } else {
+          materials.add(obj.material);
+        }
+      });
+      geometries.forEach((geom) => geom.dispose());
+      materials.forEach((mat) => mat.dispose());
+    }
+  }
   if (gridMesh) {
     scene.remove(gridMesh);
     gridMesh.geometry.dispose();
     gridMesh.material.dispose();
   }
 
-  gridLines = new THREE.GridHelper(size, gridCellCount, '#ffffff', '#ffffff');
+  gridFillMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(buildSize, buildSize, 1, 1),
+    new THREE.MeshStandardMaterial({
+      color: gridFillColor,
+      roughness: 0.35,
+      metalness: 0.05,
+      side: THREE.DoubleSide
+    })
+  );
+  gridFillMesh.rotation.x = -Math.PI / 2;
+  gridFillMesh.position.set(centerOffset, 0.004, centerOffset);
+  gridFillMesh.castShadow = true;
+  gridFillMesh.receiveShadow = true;
+  gridFillMesh.visible = previousVisibility;
+  scene.add(gridFillMesh);
+
+  gridBorderGroup = new THREE.Group();
+  const innerCellGeometry = new THREE.BoxGeometry(gridSize, innerBorderHeight, gridSize, 1, 1, 1);
+  const innerCellMaterial = new THREE.MeshStandardMaterial({
+    color: gridInnerBorderColor,
+    roughness: 0.35,
+    metalness: 0.05
+  });
+  const innerEdgeGeometry = new THREE.EdgesGeometry(innerCellGeometry);
+  const innerEdgeMaterial = new THREE.LineBasicMaterial({
+    color: '#2b2b2b',
+    transparent: true,
+    opacity: 0.45,
+    depthWrite: false
+  });
+
+  const outerCellGeometry = new THREE.PlaneGeometry(gridSize, gridSize, 1, 1);
+  const outerCellMaterial = new THREE.MeshStandardMaterial({
+    color: gridOuterBorderColor,
+    roughness: 0.35,
+    metalness: 0.05,
+    side: THREE.DoubleSide
+  });
+  const outerEdgeGeometry = new THREE.EdgesGeometry(outerCellGeometry);
+  const outerEdgeMaterial = new THREE.LineBasicMaterial({
+    color: '#2b2b2b',
+    transparent: true,
+    opacity: 0.45,
+    depthWrite: false
+  });
+
+  const addBorderCell = ({ x, z, y, geometry, material, edgeGeometry, edgeMaterial, isPlane }) => {
+    const cell = new THREE.Mesh(geometry, material);
+    if (isPlane) {
+      cell.rotation.x = -Math.PI / 2;
+    }
+    cell.position.set((x + 0.5) * gridSize, y, (z + 0.5) * gridSize);
+    cell.castShadow = true;
+    cell.receiveShadow = true;
+    const edgeLines = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+    edgeLines.renderOrder = 4;
+    cell.add(edgeLines);
+    gridBorderGroup.add(cell);
+  };
+
+  // Inner border cells: 1-cell ring around the buildable area.
+  for (let x = innerBorderMinIndex; x <= innerBorderMaxIndex; x += 1) {
+    for (let z = innerBorderMinIndex; z <= innerBorderMaxIndex; z += 1) {
+      const inBuildArea = x >= gridMinIndex && x <= gridMaxIndex && z >= gridMinIndex && z <= gridMaxIndex;
+      if (inBuildArea) continue;
+      addBorderCell({
+        x,
+        z,
+        y: innerBorderCenterY,
+        geometry: innerCellGeometry,
+        material: innerCellMaterial,
+        edgeGeometry: innerEdgeGeometry,
+        edgeMaterial: innerEdgeMaterial,
+        isPlane: false
+      });
+    }
+  }
+
+  // Outer border cells: 3-cell ring outside the inner border.
+  for (let x = outerBorderMinIndex; x <= outerBorderMaxIndex; x += 1) {
+    for (let z = outerBorderMinIndex; z <= outerBorderMaxIndex; z += 1) {
+      const inInnerBand =
+        x >= innerBorderMinIndex &&
+        x <= innerBorderMaxIndex &&
+        z >= innerBorderMinIndex &&
+        z <= innerBorderMaxIndex;
+      if (inInnerBand) continue;
+      addBorderCell({
+        x,
+        z,
+        y: -outerBorderDrop,
+        geometry: outerCellGeometry,
+        material: outerCellMaterial,
+        edgeGeometry: outerEdgeGeometry,
+        edgeMaterial: outerEdgeMaterial,
+        isPlane: true
+      });
+    }
+  }
+
+  gridBorderGroup.userData.disposables = [
+    innerCellGeometry,
+    innerCellMaterial,
+    innerEdgeGeometry,
+    innerEdgeMaterial,
+    outerCellGeometry,
+    outerCellMaterial,
+    outerEdgeGeometry,
+    outerEdgeMaterial
+  ];
+  gridBorderGroup.visible = previousVisibility;
+  scene.add(gridBorderGroup);
+
+  gridLines = new THREE.GridHelper(buildSize, gridCellCount, '#ffffff', '#ffffff');
   gridLines.position.set(centerOffset, 0.01, centerOffset);
   const lineMaterials = Array.isArray(gridLines.material) ? gridLines.material : [gridLines.material];
   lineMaterials.forEach((mat) => {
@@ -109,7 +267,7 @@ function rebuildGridMeshes() {
   scene.add(gridLines);
 
   gridMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(size, size, 1, 1),
+    new THREE.PlaneGeometry(buildSize, buildSize, 1, 1),
     new THREE.MeshBasicMaterial({
       transparent: true,
       opacity: 0,
@@ -169,7 +327,7 @@ let strokeActive = false;
 let actionDirty = false;
 function updateSunShadowFrustum() {
   const cam = dirLight.shadow.camera;
-  const extent = Math.max(120, gridCellCount * gridSize * 1.5);
+  const extent = Math.max(120, gridVisualCellCount * gridSize * 1.5);
   cam.left = -extent;
   cam.right = extent;
   cam.top = extent;
@@ -773,21 +931,13 @@ function setBuildRate(value) {
 const tempHSLColor = new THREE.Color();
 function updateSliderGradients() {
   if (hueSlider) {
-    hueSlider.style.background =
-      'linear-gradient(90deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)';
+    hueSlider.style.background = 'linear-gradient(90deg, #2f2f2f, #cfcfcf)';
   }
   if (satSlider) {
-    tempHSLColor.setHSL(hslState.h, 0, 0.5);
-    const start = `#${tempHSLColor.getHexString()}`;
-    tempHSLColor.setHSL(hslState.h, 1, 0.5);
-    const end = `#${tempHSLColor.getHexString()}`;
-    satSlider.style.background = `linear-gradient(90deg, ${start}, ${end})`;
+    satSlider.style.background = 'linear-gradient(90deg, #4f4f4f, #efefef)';
   }
   if (lightSlider) {
-    const mid = `#${new THREE.Color()
-      .setHSL(hslState.h, Math.max(0.05, hslState.s), 0.5)
-      .getHexString()}`;
-    lightSlider.style.background = `linear-gradient(90deg, #000000, ${mid}, #ffffff)`;
+    lightSlider.style.background = 'linear-gradient(90deg, #000000, #ffffff)';
   }
 }
 function currentHex() {
@@ -877,6 +1027,12 @@ if (wireframeToggle) {
 }
 function setGridVisible(on) {
   gridVisible = on;
+  if (gridFillMesh) {
+    gridFillMesh.visible = gridVisible;
+  }
+  if (gridBorderGroup) {
+    gridBorderGroup.visible = gridVisible;
+  }
   if (gridLines) {
     gridLines.visible = gridVisible;
   }
@@ -1121,29 +1277,16 @@ function tick() {
 }
 renderer.setAnimationLoop(tick);
 
-// Initialize UI value and a starter block
+// Initialize UI value and history
 setGridSize(parseFloat(gridSlider.value));
 setBlockGap(parseFloat(gapSlider.value) || 0.01);
 setBuildRate(parseFloat(buildSlider.value));
 // Initialize color from HSL defaults or input value
 const initialHex =
   colorInput && colorInput.value ? colorInput.value : '#ffffff';
-const initialHue = hueSlider ? parseFloat(hueSlider.value) : 20;
-const initialSat = satSlider ? parseFloat(satSlider.value) : 100;
-const initialLight = lightSlider ? parseFloat(lightSlider.value) : 50;
-if (!Number.isNaN(initialHue) && !Number.isNaN(initialSat) && !Number.isNaN(initialLight)) {
-  const col = new THREE.Color().setHSL(
-    Math.min(Math.max(initialHue, 0), 360) / 360,
-    Math.min(Math.max(initialSat, 0), 100) / 100,
-    Math.min(Math.max(initialLight, 0), 100) / 100
-  );
-  setBlockColor(`#${col.getHexString()}`, initialHue);
-} else {
-  setBlockColor(initialHex);
-}
+setBlockColor(initialHex);
 lastSavedColor = currentHex();
 renderRecentColors();
 setWireframeVisible(Boolean(wireframeToggle && wireframeToggle.checked));
 setGridVisible(Boolean(gridToggle && gridToggle.checked));
-addBlockAt({ x: 0, y: 0, z: 0 });
 pushHistoryState(snapshotState());

@@ -3,8 +3,8 @@
 260223_BuildingBlocks is a blueprint-styled Three.js sandbox for building, painting, undoing/redoing, and exporting voxel blocks on a fixed 15x15 grid. It ships with a draggable translucent UI, animated add/remove/paint workflows, history controls, instructions popover, OBJ export with vertex colors, sharpened shadows, and hover-animated controls.
 
 ## Features
-- Fixed 15x15 blueprint grid with crisp white lines and no distance fade
-- Draggable, blurred UI panel with sliders for block size, gap, and build speed
+- Fixed 15x15 build grid with tan cell fill, plus a 1-cell grey border, a lowered 3-cell dark-grey outer border (offset by 0.25x block size), and crisp white lines
+- Draggable, blurred UI panel with sliders for block size, gap, and add speed
 - Hover ghost preview plus animated add/remove/paint actions; undo/redo diffs snapshots and replays the same scale-up/scale-down transitions
 - Reset button that smoothly shrinks all blocks out; Export button that saves an OBJ with per-vertex colors
 - Color picker and palette popover with hover lift; instructions popover for quick control reference
