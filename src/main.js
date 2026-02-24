@@ -37,54 +37,10 @@ controls.enablePan = true;
 controls.enableRotate = true;
 controls.enableZoom = true;
 controls.mouseButtons.LEFT = null;
-controls.mouseButtons.RIGHT = null;
-controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE;
+controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
+controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
 controls.target.set(0, 0.5, 0);
 controls.update();
-
-// Manual pan with Shift + MMB
-let isPanning = false;
-const panStart = new THREE.Vector2();
-renderer.domElement.addEventListener(
-  'pointerdown',
-  (event) => {
-    if (event.button === 1 && event.shiftKey) {
-      isPanning = true;
-      controls.enableRotate = false;
-      panStart.set(event.clientX, event.clientY);
-    }
-  },
-  { passive: true }
-);
-renderer.domElement.addEventListener(
-  'pointermove',
-  (event) => {
-    if (isPanning) {
-      const deltaX = event.clientX - panStart.x;
-      const deltaY = event.clientY - panStart.y;
-      controls.pan(deltaX, deltaY);
-      controls.update();
-      panStart.set(event.clientX, event.clientY);
-    }
-  },
-  { passive: true }
-);
-renderer.domElement.addEventListener(
-  'pointerup',
-  (event) => {
-    if (event.button === 1 && isPanning) {
-      isPanning = false;
-      controls.enableRotate = true;
-    }
-  },
-  { passive: true }
-);
-window.addEventListener('keyup', (event) => {
-  if (event.key === 'Shift' && isPanning) {
-    isPanning = false;
-    controls.enableRotate = true;
-  }
-});
 
 // Lights
 const hemiLight = new THREE.HemisphereLight('#cfe8ff', '#0f1f33', 1.2);
@@ -542,7 +498,7 @@ const raycaster = new THREE.Raycaster();
 const pointerState = { down: false, mode: null };
 const hoverState = { type: null, index: null, key: null };
 let hoverDirty = true;
-let isShiftDown = false;
+let isAltDown = false;
 
 let uiActive = false;
 const uiPanel = document.getElementById('ui-panel');
@@ -557,14 +513,14 @@ uiPanel.addEventListener('pointerleave', () => {
 });
 
 window.addEventListener('keydown', (event) => {
-  if (event.key === 'Shift' && !isShiftDown) {
-    isShiftDown = true;
+  if (event.key === 'Alt' && !isAltDown) {
+    isAltDown = true;
     setPreview(null, null);
   }
 });
 window.addEventListener('keyup', (event) => {
-  if (event.key === 'Shift') {
-    isShiftDown = false;
+  if (event.key === 'Alt') {
+    isAltDown = false;
     hoverDirty = true;
   }
 });
@@ -599,7 +555,7 @@ function updateHoverTarget() {
     return;
   }
 
-  if (isShiftDown && pointerState.mode !== 'remove' && pointerState.mode !== 'paint') {
+  if (isAltDown && pointerState.mode !== 'remove' && pointerState.mode !== 'paint') {
     setPreview(null, null);
     hoverDirty = false;
     return;
@@ -705,12 +661,14 @@ renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
 renderer.domElement.addEventListener('pointerdown', (event) => {
   if (uiActive) return;
-  if (event.button === 0 || event.button === 2) {
+  if (event.button === 0) {
     pointerState.down = true;
-    if (event.button === 0 && event.shiftKey) {
+    if (event.altKey) {
       pointerState.mode = 'paint';
+    } else if (event.ctrlKey) {
+      pointerState.mode = 'remove';
     } else {
-      pointerState.mode = event.button === 0 ? 'add' : 'remove';
+      pointerState.mode = 'add';
     }
     lastActionTime[pointerState.mode] = -Infinity; // allow immediate first action
     strokeActive = true;
@@ -729,7 +687,7 @@ renderer.domElement.addEventListener('pointermove', (event) => {
 });
 
 renderer.domElement.addEventListener('pointerup', (event) => {
-  if (event.button === 0 || event.button === 2) {
+  if (event.button === 0) {
     pointerState.down = false;
     pointerState.mode = null;
     renderer.domElement.releasePointerCapture(event.pointerId);

@@ -10,7 +10,7 @@
 - Color picker and palette popover with hover lift; instructions popover for quick control reference
 - Toggles for wireframe, grid, distance circle, and fog visibility
 - Sharpened shadow filtering with taller-range sun setup for high stacks
-- Orbit (MMB), pan (Shift+MMB), scroll zoom; UI buttons animated on hover
+- Orbit (RMB), pan (MMB), scroll zoom; UI buttons animated on hover
 
 ## Getting Started
 1. Clone the repository: `git clone https://github.com/ekimroyrp/260223_BuildingBlocks.git`
@@ -21,10 +21,10 @@
 
 ## Controls
 - LMB + drag: add blocks on grid or stack onto hit faces
-- RMB + drag: remove blocks under cursor
-- Shift + LMB + drag: paint blocks to the current color
-- MMB: orbit camera
-- Shift + MMB: pan camera
+- Alt + LMB + drag: paint blocks to the current color
+- Ctrl + LMB + drag: remove blocks under cursor
+- RMB: orbit camera
+- MMB: pan camera
 - Scroll: zoom
 
 ## Deployment
