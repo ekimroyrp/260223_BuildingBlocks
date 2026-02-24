@@ -514,6 +514,7 @@ function exportBlocksToOBJ() {
 const lastActionTime = { add: -Infinity, remove: -Infinity, paint: -Infinity };
 const minScaleValue = 0.0001;
 const minAnimDamping = 2;
+const addBlockColor = new THREE.Color('#ffffff');
 const currentColor = new THREE.Color('#ffffff');
 const tempColorA = new THREE.Color();
 const tempColorB = new THREE.Color();
@@ -578,7 +579,7 @@ function scheduleColorLerp(mesh, targetColor) {
 function addBlockAt(index) {
   const key = indexKey(index);
   if (blocks.has(key)) return;
-  const material = makeBlockMaterial(currentColor.clone());
+  const material = makeBlockMaterial(addBlockColor.clone());
   const mesh = new THREE.Mesh(blockGeometry, material);
   const wire = new THREE.LineSegments(blockEdgesGeometry, wireframeMaterial);
   wire.name = 'wireframe';
@@ -899,6 +900,7 @@ const resetButton = document.getElementById('reset-button');
 const exportButton = document.getElementById('export-button');
 const instructionsButton = document.getElementById('instructions-button');
 const instructionsPopover = document.getElementById('instructions-popover');
+const blockTypeButtons = Array.from(document.querySelectorAll('.block-type-button'));
 const hslState = { h: 20 / 360, s: 1, l: 0.5 };
 let colorPopoverOpen = false;
 let instructionsPopoverOpen = false;
@@ -998,7 +1000,7 @@ function addRecentColor(hex) {
 
 function syncColorControls(forcedHsl) {
   const normalized = `#${currentColor.getHexString()}`;
-  colorValue.textContent = normalized;
+  if (colorValue) colorValue.textContent = normalized;
   if (colorInput && colorInput !== document.activeElement) colorInput.value = normalized;
   if (colorHexInput && colorHexInput !== document.activeElement) colorHexInput.value = normalized;
   if (colorChip) {
@@ -1044,9 +1046,27 @@ function setBlockColor(hex, rawHueDeg) {
   }
   syncColorControls();
 }
-colorInput.addEventListener('input', (event) => {
-  setBlockColor(event.target.value);
-});
+if (colorInput) {
+  colorInput.addEventListener('input', (event) => {
+    setBlockColor(event.target.value);
+  });
+}
+
+function setActiveBlockType(buttonEl) {
+  if (!buttonEl) return;
+  blockTypeButtons.forEach((btn) => btn.classList.toggle('active', btn === buttonEl));
+  const targetColor = buttonEl.getAttribute('data-color');
+  if (targetColor) {
+    setBlockColor(targetColor);
+  }
+}
+if (blockTypeButtons.length > 0) {
+  blockTypeButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      setActiveBlockType(btn);
+    });
+  });
+}
 
 function setWireframeVisible(on) {
   wireframeVisible = on;
@@ -1326,9 +1346,14 @@ setBlockGap(parseFloat(gapSlider.value) || 0.01);
 setBuildRate(parseFloat(buildSlider.value));
 setAddStack(parseFloat(stackSlider ? stackSlider.value : 1));
 // Initialize color from HSL defaults or input value
-const initialHex =
-  colorInput && colorInput.value ? colorInput.value : '#ffffff';
-setBlockColor(initialHex);
+const activeBlockType =
+  blockTypeButtons.find((btn) => btn.classList.contains('active')) || blockTypeButtons[0] || null;
+if (activeBlockType) {
+  setActiveBlockType(activeBlockType);
+} else {
+  const initialHex = colorInput && colorInput.value ? colorInput.value : '#67B4A8';
+  setBlockColor(initialHex);
+}
 lastSavedColor = currentHex();
 renderRecentColors();
 setWireframeVisible(Boolean(wireframeToggle && wireframeToggle.checked));

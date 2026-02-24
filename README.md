@@ -7,7 +7,7 @@
 - Draggable, blurred UI panel with sliders for block size, gap, add speed, and add stack
 - Hover ghost preview plus animated add/remove/paint actions; undo/redo diffs snapshots and replays the same scale-up/scale-down transitions
 - Reset button that smoothly shrinks all blocks out; Export button that saves an OBJ with per-vertex colors
-- Color picker and palette popover with hover lift; instructions popover for quick control reference
+- Block Types list with one-click paint type selection; instructions popover for quick control reference
 - Toggles for edges and grid visibility
 - Sharpened shadow filtering with taller-range sun setup for high stacks
 - Orbit (RMB), pan (MMB), scroll zoom; UI buttons animated on hover
@@ -24,6 +24,7 @@
 - Shift + LMB + drag: add blocks on side faces only
 - Add Stack slider: sets how many blocks each add action places in a stack
 - Alt + LMB + drag: paint blocks to the current color
+- New blocks are always added as white; Block Types only affect paint color
 - Ctrl + LMB + drag: remove blocks under cursor
 - RMB: orbit camera
 - MMB: pan camera
