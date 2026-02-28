@@ -406,7 +406,7 @@ function updateSemiAutomaticBuild(now) {
   }
   if (now - semiAutoBuildState.lastStepTime < interval) return;
 
-  const targetStack = Math.max(1, Math.min(20, Math.round(addStack)));
+  const targetStack = Math.max(1, Math.min(20, Math.round(semiBuildStack)));
   const maxStepsPerFrame = 16;
   let steps = 0;
 
@@ -1600,7 +1600,6 @@ function setBuildRate(value) {
 }
 function setAddStack(value) {
   const clamped = Math.max(1, Math.min(20, Math.round(value)));
-  const changed = addStack !== clamped;
   addStack = clamped;
   if (stackValue) {
     stackValue.textContent = `${clamped}`;
@@ -1608,12 +1607,6 @@ function setAddStack(value) {
   if (stackSlider) {
     stackSlider.value = `${clamped}`;
     updateRangeFill(stackSlider);
-  }
-  if (changed) {
-    semiAutoBuildState.completedSignature = '';
-    if (semiAutomaticMode) {
-      refreshSemiAutomaticBuildPlan();
-    }
   }
 }
 function setSemiBuildRate(value) {
@@ -1627,13 +1620,21 @@ function setSemiBuildRate(value) {
   }
 }
 function setSemiBuildStack(value) {
-  semiBuildStack = Math.max(1, Math.min(20, Math.round(value)));
+  const clamped = Math.max(1, Math.min(20, Math.round(value)));
+  const changed = semiBuildStack !== clamped;
+  semiBuildStack = clamped;
   if (semiBuildStackValue) {
     semiBuildStackValue.textContent = `${semiBuildStack}`;
   }
   if (semiBuildStackSlider) {
     semiBuildStackSlider.value = `${semiBuildStack}`;
     updateRangeFill(semiBuildStackSlider);
+  }
+  if (changed) {
+    semiAutoBuildState.completedSignature = '';
+    if (semiAutomaticMode) {
+      refreshSemiAutomaticBuildPlan();
+    }
   }
 }
 const tempHSLColor = new THREE.Color();
