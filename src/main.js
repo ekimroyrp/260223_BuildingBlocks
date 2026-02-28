@@ -431,6 +431,321 @@ function setGroundCellPaintState(cellState, painted) {
   return changed;
 }
 
+function createSeededRng(seed) {
+  let state = (Math.floor(seed) >>> 0) || 1;
+  return () => {
+    state += 0x6d2b79f5;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function getGridCellList() {
+  const cells = [];
+  for (let x = gridMinIndex; x <= gridMaxIndex; x += 1) {
+    for (let z = gridMinIndex; z <= gridMaxIndex; z += 1) {
+      cells.push({ x, z, key: groundCellKey({ x, z }) });
+    }
+  }
+  return cells;
+}
+
+function pickFullAutoSeeds(seedCount, rng) {
+  const cells = getGridCellList();
+  for (let i = cells.length - 1; i > 0; i -= 1) {
+    const swapIndex = Math.floor(rng() * (i + 1));
+    const tmp = cells[i];
+    cells[i] = cells[swapIndex];
+    cells[swapIndex] = tmp;
+  }
+  const clampedCount = Math.max(1, Math.min(seedCount, cells.length));
+  const seeds = [];
+  for (let i = 0; i < clampedCount; i += 1) {
+    const cell = cells[i];
+    seeds.push({ id: i, x: cell.x, z: cell.z, key: cell.key });
+  }
+  return seeds;
+}
+
+function assignManhattanVoronoiRegions(seeds) {
+  const regions = new Map();
+  for (let i = 0; i < seeds.length; i += 1) {
+    regions.set(seeds[i].id, new Set());
+  }
+  const cells = getGridCellList();
+  for (let i = 0; i < cells.length; i += 1) {
+    const cell = cells[i];
+    let bestSeed = null;
+    let bestDistance = Infinity;
+    for (let s = 0; s < seeds.length; s += 1) {
+      const seed = seeds[s];
+      const distance = Math.abs(cell.x - seed.x) + Math.abs(cell.z - seed.z);
+      if (!bestSeed || distance < bestDistance || (distance === bestDistance && seed.id < bestSeed.id)) {
+        bestSeed = seed;
+        bestDistance = distance;
+      }
+    }
+    if (bestSeed) {
+      regions.get(bestSeed.id).add(cell.key);
+    }
+  }
+  return regions;
+}
+
+function erodeCellRegion(regionSet) {
+  const eroded = new Set();
+  regionSet.forEach((key) => {
+    const { x, z } = parseGroundCellKey(key);
+    let isInterior = true;
+    for (let i = 0; i < groundNeighborOffsets.length; i += 1) {
+      const offset = groundNeighborOffsets[i];
+      const neighborKey = `${x + offset.x}|${z + offset.z}`;
+      if (!regionSet.has(neighborKey)) {
+        isInterior = false;
+        break;
+      }
+    }
+    if (isInterior) {
+      eroded.add(key);
+    }
+  });
+  return eroded;
+}
+
+function getLargestCellComponent(cellSet) {
+  if (!cellSet || cellSet.size === 0) return new Set();
+  const visited = new Set();
+  let largest = new Set();
+  cellSet.forEach((startKey) => {
+    if (visited.has(startKey)) return;
+    const queue = [startKey];
+    visited.add(startKey);
+    const component = new Set();
+    while (queue.length > 0) {
+      const key = queue.shift();
+      component.add(key);
+      const neighbors = getGroundNeighborKeys(key, cellSet);
+      for (let i = 0; i < neighbors.length; i += 1) {
+        const next = neighbors[i];
+        if (visited.has(next)) continue;
+        visited.add(next);
+        queue.push(next);
+      }
+    }
+    if (component.size > largest.size) {
+      largest = component;
+    }
+  });
+  return largest;
+}
+
+function getBoundaryCellsFromRegion(regionSet) {
+  const boundary = new Set();
+  regionSet.forEach((key) => {
+    const { x, z } = parseGroundCellKey(key);
+    let isBoundary = false;
+    for (let i = 0; i < groundNeighborOffsets.length; i += 1) {
+      const offset = groundNeighborOffsets[i];
+      const neighborKey = `${x + offset.x}|${z + offset.z}`;
+      if (!regionSet.has(neighborKey)) {
+        isBoundary = true;
+        break;
+      }
+    }
+    if (isBoundary) {
+      boundary.add(key);
+    }
+  });
+  return boundary;
+}
+
+function isClosedOrthogonalLoop(cellSet) {
+  if (!cellSet || cellSet.size < 4) return false;
+  const firstEntry = cellSet.values().next();
+  if (firstEntry.done) return false;
+  const start = firstEntry.value;
+  const queue = [start];
+  const visited = new Set([start]);
+  while (queue.length > 0) {
+    const key = queue.shift();
+    const neighbors = getGroundNeighborKeys(key, cellSet);
+    if (neighbors.length !== 2) {
+      return false;
+    }
+    for (let i = 0; i < neighbors.length; i += 1) {
+      const next = neighbors[i];
+      if (visited.has(next)) continue;
+      visited.add(next);
+      queue.push(next);
+    }
+  }
+  return visited.size === cellSet.size;
+}
+
+function addCellAndNeighborsToBlockedSet(key, blockedSet) {
+  blockedSet.add(key);
+  const { x, z } = parseGroundCellKey(key);
+  for (let i = 0; i < groundNeighborOffsets.length; i += 1) {
+    const offset = groundNeighborOffsets[i];
+    const nx = x + offset.x;
+    const nz = z + offset.z;
+    if (nx < gridMinIndex || nx > gridMaxIndex || nz < gridMinIndex || nz > gridMaxIndex) {
+      continue;
+    }
+    blockedSet.add(`${nx}|${nz}`);
+  }
+}
+
+function getConnectedCellComponents(cellSet) {
+  const components = [];
+  if (!cellSet || cellSet.size === 0) {
+    return components;
+  }
+  const visited = new Set();
+  cellSet.forEach((startKey) => {
+    if (visited.has(startKey)) return;
+    const queue = [startKey];
+    visited.add(startKey);
+    const component = new Set();
+    while (queue.length > 0) {
+      const key = queue.shift();
+      component.add(key);
+      const neighbors = getGroundNeighborKeys(key, cellSet);
+      for (let i = 0; i < neighbors.length; i += 1) {
+        const next = neighbors[i];
+        if (visited.has(next)) continue;
+        visited.add(next);
+        queue.push(next);
+      }
+    }
+    components.push(component);
+  });
+  return components;
+}
+
+function countExposedCellEdges(key, cellSet) {
+  const { x, z } = parseGroundCellKey(key);
+  let exposed = 0;
+  for (let i = 0; i < groundNeighborOffsets.length; i += 1) {
+    const offset = groundNeighborOffsets[i];
+    const neighborKey = `${x + offset.x}|${z + offset.z}`;
+    if (!cellSet.has(neighborKey)) {
+      exposed += 1;
+    }
+  }
+  return exposed;
+}
+
+function pruneCellsWithThreeExposedEdges(cellSet) {
+  let working = new Set(cellSet);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const removeKeys = [];
+    working.forEach((key) => {
+      if (countExposedCellEdges(key, working) >= 3) {
+        removeKeys.push(key);
+      }
+    });
+    if (removeKeys.length > 0) {
+      changed = true;
+      for (let i = 0; i < removeKeys.length; i += 1) {
+        working.delete(removeKeys[i]);
+      }
+    }
+  }
+  return working;
+}
+
+function getRegionOutlineCandidates(regionSet) {
+  const candidates = [];
+  if (!regionSet || regionSet.size < 9) {
+    return candidates;
+  }
+  const eroded = erodeCellRegion(regionSet);
+  if (!eroded || eroded.size < 8) {
+    return candidates;
+  }
+  const components = getConnectedCellComponents(eroded);
+  for (let i = 0; i < components.length; i += 1) {
+    const component = components[i];
+    if (component.size < 8) continue;
+    const pruned = pruneCellsWithThreeExposedEdges(component);
+    if (!pruned || pruned.size < 8) continue;
+    const prunedComponents = getConnectedCellComponents(pruned);
+    for (let p = 0; p < prunedComponents.length; p += 1) {
+      const prunedComponent = prunedComponents[p];
+      if (!prunedComponent || prunedComponent.size < 8) continue;
+      const outline = getBoundaryCellsFromRegion(prunedComponent);
+      if (!outline || outline.size < 8) continue;
+      candidates.push({ outline, cells: prunedComponent });
+    }
+  }
+  candidates.sort((a, b) => b.cells.size - a.cells.size);
+  return candidates;
+}
+
+function canAcceptShapeWithGap(shapeCells, blockedSet) {
+  if (!shapeCells || shapeCells.size < 8) return false;
+  const iter = shapeCells.values();
+  for (let next = iter.next(); !next.done; next = iter.next()) {
+    if (blockedSet.has(next.value)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function buildFullAutoOutlinePattern() {
+  const seedCount = Math.max(1, Math.min(6, Math.round(fullOutlineCount)));
+  const rng = createSeededRng(Math.max(1, Math.round(fullOutlineSeed)));
+  const seeds = pickFullAutoSeeds(seedCount, rng);
+  if (seeds.length === 0) return new Set();
+
+  const regions = assignManhattanVoronoiRegions(seeds);
+  const entries = seeds.map((seed) => ({ seed, region: regions.get(seed.id) || new Set() }));
+  entries.sort((a, b) => a.seed.id - b.seed.id);
+
+  const acceptedPaintKeys = new Set();
+  const blockedKeys = new Set();
+
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
+    const candidateOutlines = getRegionOutlineCandidates(entry.region);
+    if (candidateOutlines.length === 0) continue;
+    let selected = null;
+    for (let c = 0; c < candidateOutlines.length; c += 1) {
+      const candidate = candidateOutlines[c];
+      if (!canAcceptShapeWithGap(candidate.cells, blockedKeys)) continue;
+      selected = candidate;
+      break;
+    }
+    if (!selected) continue;
+    selected.cells.forEach((key) => {
+      acceptedPaintKeys.add(key);
+      addCellAndNeighborsToBlockedSet(key, blockedKeys);
+    });
+  }
+
+  return acceptedPaintKeys;
+}
+
+function applyGroundPaintPattern(paintedKeys) {
+  const paintedSet = paintedKeys instanceof Set ? paintedKeys : new Set();
+  groundCellStates.forEach((cellState, key) => {
+    setGroundCellPaintState(cellState, paintedSet.has(key));
+  });
+}
+
+function runFullAutoGeneration() {
+  if (!fullAutomaticMode) return;
+  const outlineKeys = buildFullAutoOutlinePattern();
+  stopSemiAutomaticBuild({ clearCompleted: true });
+  applyGroundPaintPattern(outlineKeys);
+}
+
 function getClosedLoopInteriorCells(path) {
   if (!Array.isArray(path) || path.length < 4) return [];
   const boundarySet = new Set(path.map((index) => groundCellKey(index)));
@@ -1635,7 +1950,7 @@ let semiBuildRate = 10;
 let semiBuildStack = 1;
 let fullAutomaticMode = false;
 let fullBuildRate = 10;
-let fullOutlineCount = 1;
+let fullOutlineCount = 3;
 let fullOutlineSeed = 1;
 const rangeInputs = Array.from(document.querySelectorAll('input[type="range"]'));
 
@@ -1742,13 +2057,16 @@ function setFullBuildRate(value) {
   }
 }
 function setFullOutlineCount(value) {
-  fullOutlineCount = Math.max(1, Math.min(20, Math.round(value)));
+  fullOutlineCount = Math.max(1, Math.min(6, Math.round(value)));
   if (fullOutlineCountValue) {
     fullOutlineCountValue.textContent = `${fullOutlineCount}`;
   }
   if (fullOutlineCountSlider) {
     fullOutlineCountSlider.value = `${fullOutlineCount}`;
     updateRangeFill(fullOutlineCountSlider);
+  }
+  if (fullAutomaticMode) {
+    runFullAutoGeneration();
   }
 }
 function setFullOutlineSeed(value) {
@@ -1759,6 +2077,9 @@ function setFullOutlineSeed(value) {
   if (fullOutlineSeedSlider) {
     fullOutlineSeedSlider.value = `${fullOutlineSeed}`;
     updateRangeFill(fullOutlineSeedSlider);
+  }
+  if (fullAutomaticMode) {
+    runFullAutoGeneration();
   }
 }
 const tempHSLColor = new THREE.Color();
@@ -1914,6 +2235,9 @@ function setFullAutomaticMode(on) {
     if (fullAutomaticMode) {
       refreshRangeFills();
     }
+  }
+  if (fullAutomaticMode) {
+    runFullAutoGeneration();
   }
 }
 if (semiAutomaticButton) {
@@ -2322,7 +2646,7 @@ setAddStack(parseFloat(stackSlider ? stackSlider.value : 1));
 setSemiBuildRate(parseFloat(semiBuildSpeedSlider ? semiBuildSpeedSlider.value : 10));
 setSemiBuildStack(parseFloat(semiBuildStackSlider ? semiBuildStackSlider.value : 1));
 setFullBuildRate(parseFloat(fullBuildSpeedSlider ? fullBuildSpeedSlider.value : 10));
-setFullOutlineCount(parseFloat(fullOutlineCountSlider ? fullOutlineCountSlider.value : 1));
+setFullOutlineCount(parseFloat(fullOutlineCountSlider ? fullOutlineCountSlider.value : 3));
 setFullOutlineSeed(parseFloat(fullOutlineSeedSlider ? fullOutlineSeedSlider.value : 1));
 // Initialize color from HSL defaults or input value
 const activeBlockType =
