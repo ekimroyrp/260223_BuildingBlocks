@@ -172,11 +172,18 @@ const gridMaxIndex = gridMinIndex + gridCellCount - 1;
 const gridFillColor = new THREE.Color('#6e6e6e');
 const gridInnerBorderColor = new THREE.Color('#8d8d8d');
 const gridOuterBorderColor = new THREE.Color('#4f4f4f');
+const semiAutoGroundPaintColor = new THREE.Color('#ff8f1f');
 let gridSize = 1.0;
 let gridLines = null;
 let gridFillMesh = null;
+let groundCellGroup = null;
 let gridBorderGroup = null;
 let gridMesh = null;
+const groundCellStates = new Map();
+
+function groundCellKey(index) {
+  return `${index.x}|${index.z}`;
+}
 
 function disposeMaterial(material) {
   if (Array.isArray(material)) {
@@ -209,6 +216,22 @@ function rebuildGridMeshes() {
     scene.remove(gridFillMesh);
     gridFillMesh.geometry.dispose();
     disposeMaterial(gridFillMesh.material);
+  }
+  if (groundCellGroup) {
+    scene.remove(groundCellGroup);
+    const geometries = new Set();
+    const materials = new Set();
+    groundCellGroup.traverse((obj) => {
+      if (!obj.isMesh) return;
+      geometries.add(obj.geometry);
+      if (Array.isArray(obj.material)) {
+        obj.material.forEach((mat) => materials.add(mat));
+      } else {
+        materials.add(obj.material);
+      }
+    });
+    geometries.forEach((geom) => geom.dispose());
+    materials.forEach((mat) => mat.dispose());
   }
   if (gridBorderGroup) {
     scene.remove(gridBorderGroup);
@@ -252,6 +275,40 @@ function rebuildGridMeshes() {
   gridFillMesh.receiveShadow = true;
   gridFillMesh.visible = previousVisibility;
   scene.add(gridFillMesh);
+
+  groundCellGroup = new THREE.Group();
+  const groundCellGeometry = new THREE.PlaneGeometry(gridSize, gridSize, 1, 1);
+  for (let x = gridMinIndex; x <= gridMaxIndex; x += 1) {
+    for (let z = gridMinIndex; z <= gridMaxIndex; z += 1) {
+      const key = groundCellKey({ x, z });
+      let cellState = groundCellStates.get(key);
+      if (!cellState) {
+        cellState = {
+          index: { x, z },
+          color: gridFillColor.clone(),
+          colorAnim: null,
+          mesh: null,
+          material: null
+        };
+        groundCellStates.set(key, cellState);
+      }
+      const cellMaterial = new THREE.MeshStandardMaterial({
+        color: cellState.color.clone(),
+        roughness: 0.35,
+        metalness: 0.05,
+        side: THREE.DoubleSide
+      });
+      const cellMesh = new THREE.Mesh(groundCellGeometry, cellMaterial);
+      cellMesh.rotation.x = -Math.PI / 2;
+      cellMesh.position.set((x + 0.5) * gridSize, 0.0045, (z + 0.5) * gridSize);
+      cellMesh.receiveShadow = true;
+      cellState.mesh = cellMesh;
+      cellState.material = cellMaterial;
+      groundCellGroup.add(cellMesh);
+    }
+  }
+  groundCellGroup.visible = previousVisibility;
+  scene.add(groundCellGroup);
 
   gridBorderGroup = new THREE.Group();
   const innerCellGeometry = new THREE.BoxGeometry(gridSize, innerBorderHeight, gridSize, 1, 1, 1);
@@ -771,6 +828,28 @@ function scheduleColorLerp(state, targetColor) {
   }
 }
 
+function scheduleGroundCellColorLerp(cellState, targetColor) {
+  if (!cellState) return;
+  if (!cellState.colorAnim) {
+    cellState.colorAnim = {
+      from: cellState.color.clone(),
+      to: targetColor.clone(),
+      t: 0
+    };
+  } else {
+    cellState.colorAnim.from.copy(cellState.color);
+    cellState.colorAnim.to.copy(targetColor);
+    cellState.colorAnim.t = 0;
+  }
+}
+
+function resetSemiAutomaticGroundPaint() {
+  groundCellStates.forEach((cellState) => {
+    if (!cellState) return;
+    scheduleGroundCellColorLerp(cellState, gridFillColor);
+  });
+}
+
 function addBlockAt(index, color = currentColor, markDirty = true) {
   const key = indexKey(index);
   if (blocks.has(key)) return;
@@ -831,6 +910,7 @@ const raycaster = new THREE.Raycaster();
 const pointerState = { down: false, mode: null };
 const hoverState = { type: null, index: null, key: null, addDirection: null };
 let hoverDirty = true;
+let semiAutomaticMode = false;
 let isAltDown = false;
 let isShiftDown = false;
 
@@ -896,6 +976,32 @@ function setPreview(type, targetIndex, targetKey, addDirection) {
 function updateHoverTarget() {
   if (uiActive) {
     setPreview(null, null);
+    hoverDirty = false;
+    return;
+  }
+
+  if (semiAutomaticMode) {
+    raycaster.setFromCamera(pointer, camera);
+    hitPlane.length = 0;
+    raycaster.intersectObject(gridMesh, false, hitPlane);
+    if (hitPlane.length > 0) {
+      const point = hitPlane[0].point;
+      tempIndex.x = Math.floor(point.x / gridSize);
+      tempIndex.y = 0;
+      tempIndex.z = Math.floor(point.z / gridSize);
+      if (isWithinGridBounds(tempIndex)) {
+        const semiModeType = pointerState.mode === 'groundErase' ? 'groundErase' : 'groundPaint';
+        hoverState.type = semiModeType;
+        hoverState.index = { x: tempIndex.x, y: 0, z: tempIndex.z };
+        hoverState.key = groundCellKey({ x: tempIndex.x, z: tempIndex.z });
+        hoverState.addDirection = null;
+        previewMesh.visible = false;
+      } else {
+        setPreview(null, null);
+      }
+    } else {
+      setPreview(null, null);
+    }
     hoverDirty = false;
     return;
   }
@@ -1041,6 +1147,22 @@ function handlePaint() {
       }
       lastActionTime.paint = now;
     }
+  } else if (hoverState.type === 'groundPaint' && hoverState.key) {
+    if (now - lastActionTime.paint >= buildInterval) {
+      const cellState = groundCellStates.get(hoverState.key);
+      if (cellState) {
+        scheduleGroundCellColorLerp(cellState, semiAutoGroundPaintColor);
+      }
+      lastActionTime.paint = now;
+    }
+  } else if (hoverState.type === 'groundErase' && hoverState.key) {
+    if (now - lastActionTime.paint >= buildInterval) {
+      const cellState = groundCellStates.get(hoverState.key);
+      if (cellState) {
+        scheduleGroundCellColorLerp(cellState, gridFillColor);
+      }
+      lastActionTime.paint = now;
+    }
   }
 }
 
@@ -1050,16 +1172,24 @@ renderer.domElement.addEventListener('pointerdown', (event) => {
   if (uiActive) return;
   if (event.button === 0) {
     pointerState.down = true;
-    if (event.altKey) {
+    if (semiAutomaticMode) {
+      pointerState.mode = event.ctrlKey ? 'groundErase' : 'groundPaint';
+    } else if (event.altKey) {
       pointerState.mode = 'paint';
     } else if (event.ctrlKey) {
       pointerState.mode = 'remove';
     } else {
       pointerState.mode = 'add';
     }
-    lastActionTime[pointerState.mode] = -Infinity; // allow immediate first action
-    strokeActive = true;
-    actionDirty = false;
+    if (pointerState.mode === 'groundPaint' || pointerState.mode === 'groundErase') {
+      lastActionTime.paint = -Infinity; // allow immediate first action
+      strokeActive = false;
+      actionDirty = false;
+    } else {
+      lastActionTime[pointerState.mode] = -Infinity; // allow immediate first action
+      strokeActive = true;
+      actionDirty = false;
+    }
     renderer.domElement.setPointerCapture(event.pointerId);
     updatePointer(event);
     updateHoverTarget();
@@ -1108,6 +1238,12 @@ const hueValue = document.getElementById('hue-value');
 const satValue = document.getElementById('sat-value');
 const lightValue = document.getElementById('light-value');
 const swatches = Array.from(document.querySelectorAll('#color-swatches button'));
+const semiAutomaticButton = document.getElementById('semi-automatic-button');
+const semiAutomaticControls = document.getElementById('semi-automatic-controls');
+const semiBuildSpeedSlider = document.getElementById('semi-build-speed');
+const semiBuildSpeedValue = document.getElementById('semi-build-speed-value');
+const semiBuildStackSlider = document.getElementById('semi-build-stack');
+const semiBuildStackValue = document.getElementById('semi-build-stack-value');
 const wireframeToggle = document.getElementById('wireframe-toggle');
 const gridToggle = document.getElementById('grid-toggle');
 const rainToggle = document.getElementById('rain-toggle');
@@ -1126,6 +1262,8 @@ let recentColors = swatches.map((_, idx) => (idx === 0 ? '#ff9c00' : '#ffffff'))
 let lastSavedColor = '#ffffff';
 let wireframeVisible = Boolean(wireframeToggle && wireframeToggle.checked);
 let gridVisible = Boolean(gridToggle && gridToggle.checked);
+let semiBuildRate = 10;
+let semiBuildStack = 1;
 const rangeInputs = Array.from(document.querySelectorAll('input[type="range"]'));
 
 function updateRangeFill(el) {
@@ -1197,6 +1335,26 @@ function setAddStack(value) {
   if (stackSlider) {
     stackSlider.value = `${clamped}`;
     updateRangeFill(stackSlider);
+  }
+}
+function setSemiBuildRate(value) {
+  semiBuildRate = Math.max(1, Math.min(100, value));
+  if (semiBuildSpeedValue) {
+    semiBuildSpeedValue.textContent = `${semiBuildRate.toFixed(1)}`;
+  }
+  if (semiBuildSpeedSlider) {
+    semiBuildSpeedSlider.value = `${semiBuildRate}`;
+    updateRangeFill(semiBuildSpeedSlider);
+  }
+}
+function setSemiBuildStack(value) {
+  semiBuildStack = Math.max(1, Math.min(20, Math.round(value)));
+  if (semiBuildStackValue) {
+    semiBuildStackValue.textContent = `${semiBuildStack}`;
+  }
+  if (semiBuildStackSlider) {
+    semiBuildStackSlider.value = `${semiBuildStack}`;
+    updateRangeFill(semiBuildStackSlider);
   }
 }
 const tempHSLColor = new THREE.Color();
@@ -1299,6 +1457,51 @@ if (blockTypeButtons.length > 0) {
   });
 }
 
+function setSemiAutomaticMode(on) {
+  const wasActive = semiAutomaticMode;
+  semiAutomaticMode = on;
+  if (uiPanel) {
+    uiPanel.classList.toggle('semi-auto-open', semiAutomaticMode);
+  }
+  if (semiAutomaticButton) {
+    semiAutomaticButton.classList.toggle('is-active', semiAutomaticMode);
+    semiAutomaticButton.setAttribute('aria-pressed', semiAutomaticMode ? 'true' : 'false');
+  }
+  if (semiAutomaticControls) {
+    semiAutomaticControls.classList.toggle('is-hidden', !semiAutomaticMode);
+    if (semiAutomaticMode) {
+      refreshRangeFills();
+    }
+  }
+  if (!semiAutomaticMode) {
+    pointerState.mode = null;
+    pointerState.down = false;
+    if (wasActive) {
+      resetSemiAutomaticGroundPaint();
+    }
+  }
+  setPreview(null, null);
+  hoverDirty = true;
+  if (!pointerState.down) {
+    updateHoverTarget();
+  }
+}
+if (semiAutomaticButton) {
+  semiAutomaticButton.addEventListener('click', () => {
+    setSemiAutomaticMode(!semiAutomaticMode);
+  });
+}
+if (semiBuildSpeedSlider) {
+  semiBuildSpeedSlider.addEventListener('input', (event) => {
+    setSemiBuildRate(parseFloat(event.target.value));
+  });
+}
+if (semiBuildStackSlider) {
+  semiBuildStackSlider.addEventListener('input', (event) => {
+    setSemiBuildStack(parseFloat(event.target.value));
+  });
+}
+
 function setGroundEdgeVisible(on) {
   if (gridBorderGroup) {
     gridBorderGroup.traverse((obj) => {
@@ -1337,6 +1540,9 @@ function setGridVisible(on) {
   gridVisible = on;
   if (gridFillMesh) {
     gridFillMesh.visible = gridVisible;
+  }
+  if (groundCellGroup) {
+    groundCellGroup.visible = gridVisible;
   }
   if (gridBorderGroup) {
     gridBorderGroup.visible = gridVisible;
@@ -1517,6 +1723,9 @@ window.addEventListener('keydown', (event) => {
   }
 
   if (event.key === 'Escape') {
+    if (semiAutomaticMode) {
+      setSemiAutomaticMode(false);
+    }
     if (colorPopoverOpen) toggleColorPopover(false);
     if (instructionsPopoverOpen) toggleInstructionsPopover(false);
   }
@@ -1617,6 +1826,17 @@ function updateAnimations(delta) {
   if (colorDirty && blockMesh.instanceColor) {
     blockMesh.instanceColor.needsUpdate = true;
   }
+  groundCellStates.forEach((cellState) => {
+    if (!cellState || !cellState.material || !cellState.colorAnim) return;
+    const lerpRate = Math.max(1.2, buildRate * 0.6); // same paint feel as block painting
+    cellState.colorAnim.t = Math.min(1, cellState.colorAnim.t + delta * lerpRate);
+    cellState.color.lerpColors(cellState.colorAnim.from, cellState.colorAnim.to, cellState.colorAnim.t);
+    cellState.material.color.copy(cellState.color);
+    if (cellState.colorAnim.t >= 1 - 1e-4) {
+      cellState.color.copy(cellState.colorAnim.to);
+      cellState.colorAnim = null;
+    }
+  });
   if (resetPending && blockStates.length === 0) {
     pushHistoryState(snapshotState(), true);
     strokeActive = false;
@@ -1645,6 +1865,8 @@ setGridSize(parseFloat(gridSlider.value));
 setBlockGap(parseFloat(gapSlider.value) || 0.01);
 setBuildRate(parseFloat(buildSlider.value));
 setAddStack(parseFloat(stackSlider ? stackSlider.value : 1));
+setSemiBuildRate(parseFloat(semiBuildSpeedSlider ? semiBuildSpeedSlider.value : 10));
+setSemiBuildStack(parseFloat(semiBuildStackSlider ? semiBuildStackSlider.value : 1));
 // Initialize color from HSL defaults or input value
 const activeBlockType =
   blockTypeButtons.find((btn) => btn.classList.contains('active')) || blockTypeButtons[0] || null;
@@ -1659,4 +1881,5 @@ renderRecentColors();
 setWireframeVisible(Boolean(wireframeToggle && wireframeToggle.checked));
 setGridVisible(Boolean(gridToggle && gridToggle.checked));
 setRainVisible(Boolean(rainToggle && rainToggle.checked));
+setSemiAutomaticMode(false);
 pushHistoryState(snapshotState());
