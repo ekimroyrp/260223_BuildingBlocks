@@ -606,19 +606,24 @@ input[type="range"]::-moz-range-track {
   margin-top: 0;
 }
 
-.semi-auto-controls {
+.auto-mode-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.auto-mode-controls {
   margin-top: 10px;
 }
 
-.semi-auto-controls.is-hidden {
+.auto-mode-controls.is-hidden {
   display: none;
 }
 
-.semi-auto-controls .control:last-child {
+.auto-mode-controls .control:last-child {
   margin-bottom: 0;
 }
 
-#ui-panel.semi-auto-open .block-size-control {
+#ui-panel.auto-controls-open .block-size-control {
   border-top: 4px solid #ffffff;
   padding-top: 10px;
   margin-top: 10px;
