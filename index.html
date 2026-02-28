@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>260223_BuildingBlocks</title>
-  <script type="module" crossorigin src="./assets/index-BC-1RnR-.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-B5zCpiRa.css">
+  <script type="module" crossorigin src="./assets/index-DqVxQ1Ya.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-CmGIZhUr.css">
 </head>
 <body>
   <div id="app">
@@ -13,7 +13,78 @@
     <div id="ui-panel">
       <div id="ui-handle"></div>
       <div class="ui-body">
-        <label class="control">
+        <div class="control">
+          <div class="auto-mode-buttons">
+            <button type="button" id="semi-automatic-button" class="pill-button">Semi-Auto</button>
+            <button type="button" id="full-automatic-button" class="pill-button">Full-Auto</button>
+          </div>
+          <div id="semi-automatic-controls" class="auto-mode-controls is-hidden">
+            <label class="control">
+              <div class="control-row">
+                <span>Build Speed</span>
+                <span id="semi-build-speed-value">10</span>
+              </div>
+              <input type="range" id="semi-build-speed" min="1" max="100" step="0.1" value="10">
+            </label>
+            <label class="control">
+              <div class="control-row">
+                <span>Build Stack</span>
+                <span id="semi-build-stack-value">3</span>
+              </div>
+              <input type="range" id="semi-build-stack" min="1" max="20" step="1" value="3">
+            </label>
+          </div>
+          <div id="full-automatic-controls" class="auto-mode-controls is-hidden">
+            <label class="control">
+              <div class="control-row">
+                <span>Build Speed</span>
+                <span id="full-build-speed-value">10</span>
+              </div>
+              <input type="range" id="full-build-speed" min="1" max="100" step="0.1" value="10">
+            </label>
+            <label class="control">
+              <div class="control-row">
+                <span>Max Buildings</span>
+                <span id="full-outline-count-value">3</span>
+              </div>
+              <input type="range" id="full-outline-count" min="1" max="6" step="1" value="3">
+            </label>
+            <label class="control">
+              <div class="control-row">
+                <span>Location Seed</span>
+                <span id="full-outline-seed-value">1</span>
+              </div>
+              <input type="range" id="full-outline-seed" min="1" max="1000" step="1" value="1">
+            </label>
+            <label class="control">
+              <div class="control-row">
+                <span>Min Stack</span>
+                <span id="full-min-stack-value">3</span>
+              </div>
+              <input type="range" id="full-min-stack" min="1" max="20" step="1" value="3">
+            </label>
+            <label class="control">
+              <div class="control-row">
+                <span>Max Stack</span>
+                <span id="full-max-stack-value">10</span>
+              </div>
+              <input type="range" id="full-max-stack" min="1" max="20" step="1" value="10">
+            </label>
+            <label class="control">
+              <div class="control-row">
+                <span>Stack Seed</span>
+                <span id="full-stack-seed-value">1</span>
+              </div>
+              <input type="range" id="full-stack-seed" min="1" max="1000" step="1" value="1">
+            </label>
+            <div class="control">
+              <button type="button" id="full-auto-start-button" class="pill-button instruction-button">
+                Start Build
+              </button>
+            </div>
+          </div>
+        </div>
+        <label class="control block-size-control">
           <div class="control-row">
             <span>Block Size</span>
             <span id="grid-size-value">1.0</span>
