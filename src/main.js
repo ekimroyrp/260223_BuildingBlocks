@@ -1490,6 +1490,32 @@ window.addEventListener('click', (event) => {
   }
 });
 window.addEventListener('keydown', (event) => {
+  const targetEl = event.target;
+  const tag = targetEl && targetEl.tagName ? targetEl.tagName.toLowerCase() : '';
+  const inputType = targetEl && targetEl.type ? targetEl.type.toLowerCase() : '';
+  const isTextInput =
+    tag === 'textarea' ||
+    (tag === 'input' &&
+      !['range', 'checkbox', 'button', 'submit', 'color', 'hidden'].includes(inputType));
+  const isEditableTarget = Boolean(targetEl && (targetEl.isContentEditable || isTextInput));
+  const withCommand = event.ctrlKey || event.metaKey;
+  const key = event.key.toLowerCase();
+  const isUndoShortcut = withCommand && !event.shiftKey && !event.altKey && key === 'z';
+  const isRedoShortcut = withCommand && !event.shiftKey && !event.altKey && key === 'y';
+
+  if (!isEditableTarget && isUndoShortcut) {
+    event.preventDefault();
+    finalizeStrokeHistory();
+    undoLast();
+    return;
+  }
+  if (!isEditableTarget && isRedoShortcut) {
+    event.preventDefault();
+    finalizeStrokeHistory();
+    redoLast();
+    return;
+  }
+
   if (event.key === 'Escape') {
     if (colorPopoverOpen) toggleColorPopover(false);
     if (instructionsPopoverOpen) toggleInstructionsPopover(false);
