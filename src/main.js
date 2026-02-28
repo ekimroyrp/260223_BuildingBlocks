@@ -189,7 +189,8 @@ const groundNeighborOffsets = [
 const semiAutoBuildState = {
   active: false,
   signature: '',
-  completedSignature: '',
+  completedSignatures: new Set(),
+  completedLoopKeys: new Map(),
   path: [],
   pathIndex: 0,
   layerIndex: 0,
@@ -261,7 +262,7 @@ function traceClosedGroundLoop(startKey, firstNeighborKey, componentSet, expecte
   return path;
 }
 
-function findClosedGroundLoop(excludeSignature = '') {
+function findClosedGroundLoop(excludedSignatures = null) {
   const paintedKeys = [];
   groundCellStates.forEach((cellState, key) => {
     if (cellState && cellState.painted) {
@@ -274,7 +275,6 @@ function findClosedGroundLoop(excludeSignature = '') {
   const paintedSet = new Set(paintedKeys);
   const visited = new Set();
   let bestLoop = null;
-  let bestExcludedLoop = null;
 
   for (let i = 0; i < paintedKeys.length; i += 1) {
     const rootKey = paintedKeys[i];
@@ -325,26 +325,43 @@ function findClosedGroundLoop(excludeSignature = '') {
     if (!pathKeys) continue;
 
     const signature = sortedComponent.join(',');
-    const path = pathKeys.map((key) => parseGroundCellKey(key));
-    const loopEntry = { signature, path };
-    if (excludeSignature && signature === excludeSignature) {
-      if (!bestExcludedLoop || path.length > bestExcludedLoop.path.length) {
-        bestExcludedLoop = loopEntry;
-      }
+    if (excludedSignatures && excludedSignatures.has(signature)) {
       continue;
     }
+    const path = pathKeys.map((key) => parseGroundCellKey(key));
     if (!bestLoop || path.length > bestLoop.path.length) {
-      bestLoop = loopEntry;
+      bestLoop = { signature, path };
     }
   }
 
-  if (bestLoop) {
-    return bestLoop;
+  return bestLoop;
+}
+
+function clearCompletedSemiAutoLoops() {
+  semiAutoBuildState.completedSignatures.clear();
+  semiAutoBuildState.completedLoopKeys.clear();
+}
+
+function registerCompletedSemiAutoLoop(signature, path) {
+  if (!signature || !Array.isArray(path) || path.length === 0) return;
+  semiAutoBuildState.completedSignatures.add(signature);
+  const keySet = new Set(path.map((index) => groundCellKey(index)));
+  semiAutoBuildState.completedLoopKeys.set(signature, keySet);
+}
+
+function invalidateCompletedLoopsForCell(cellKey) {
+  if (!cellKey) return;
+  const signaturesToRemove = [];
+  semiAutoBuildState.completedLoopKeys.forEach((keySet, signature) => {
+    if (keySet.has(cellKey)) {
+      signaturesToRemove.push(signature);
+    }
+  });
+  for (let i = 0; i < signaturesToRemove.length; i += 1) {
+    const signature = signaturesToRemove[i];
+    semiAutoBuildState.completedLoopKeys.delete(signature);
+    semiAutoBuildState.completedSignatures.delete(signature);
   }
-  if (excludeSignature) {
-    return null;
-  }
-  return bestExcludedLoop;
 }
 
 function stopSemiAutomaticBuild(options = {}) {
@@ -360,7 +377,7 @@ function stopSemiAutomaticBuild(options = {}) {
   semiAutoBuildState.lastStepTime = null;
   semiAutoBuildState.changedBlocks = false;
   if (clearCompleted) {
-    semiAutoBuildState.completedSignature = '';
+    clearCompletedSemiAutoLoops();
   }
 }
 
@@ -378,12 +395,15 @@ function startSemiAutomaticBuild(loop) {
   hoverDirty = true;
 }
 
-function refreshSemiAutomaticBuildPlan() {
+function refreshSemiAutomaticBuildPlan(changedCellKey = '') {
   if (!semiAutomaticMode) {
     stopSemiAutomaticBuild({ clearCompleted: true });
     return;
   }
-  const closedLoop = findClosedGroundLoop(semiAutoBuildState.completedSignature);
+  if (changedCellKey) {
+    invalidateCompletedLoopsForCell(changedCellKey);
+  }
+  const closedLoop = findClosedGroundLoop(semiAutoBuildState.completedSignatures);
   if (!closedLoop) {
     stopSemiAutomaticBuild();
     return;
@@ -493,7 +513,7 @@ function updateSemiAutomaticBuild(now) {
             semiAutoBuildState.changedBlocks = true;
           }
         }
-        semiAutoBuildState.completedSignature = semiAutoBuildState.signature;
+        registerCompletedSemiAutoLoop(semiAutoBuildState.signature, semiAutoBuildState.path);
         stopSemiAutomaticBuild();
         break;
       }
@@ -1168,16 +1188,11 @@ function scheduleGroundCellColorLerp(cellState, targetColor) {
 }
 
 function resetSemiAutomaticGroundPaint() {
-  let changed = false;
   groundCellStates.forEach((cellState) => {
     if (!cellState) return;
-    changed = setGroundCellPaintState(cellState, false) || changed;
+    setGroundCellPaintState(cellState, false);
   });
-  if (changed) {
-    refreshSemiAutomaticBuildPlan();
-  } else {
-    stopSemiAutomaticBuild({ clearCompleted: true });
-  }
+  stopSemiAutomaticBuild({ clearCompleted: true });
 }
 
 function addBlockAt(index, color = currentColor, markDirty = true) {
@@ -1485,27 +1500,23 @@ function handlePaint() {
       lastActionTime.paint = now;
     }
   } else if (hoverState.type === 'groundPaint' && hoverState.key) {
-    if (now - lastActionTime.paint >= buildInterval) {
-      const cellState = groundCellStates.get(hoverState.key);
-      if (cellState) {
-        const changed = setGroundCellPaintState(cellState, true);
-        if (changed) {
-          refreshSemiAutomaticBuildPlan();
-        }
+    const cellState = groundCellStates.get(hoverState.key);
+    if (cellState) {
+      const changed = setGroundCellPaintState(cellState, true);
+      if (changed) {
+        refreshSemiAutomaticBuildPlan(hoverState.key);
       }
-      lastActionTime.paint = now;
     }
+    lastActionTime.paint = now;
   } else if (hoverState.type === 'groundErase' && hoverState.key) {
-    if (now - lastActionTime.paint >= buildInterval) {
-      const cellState = groundCellStates.get(hoverState.key);
-      if (cellState) {
-        const changed = setGroundCellPaintState(cellState, false);
-        if (changed) {
-          refreshSemiAutomaticBuildPlan();
-        }
+    const cellState = groundCellStates.get(hoverState.key);
+    if (cellState) {
+      const changed = setGroundCellPaintState(cellState, false);
+      if (changed) {
+        refreshSemiAutomaticBuildPlan(hoverState.key);
       }
-      lastActionTime.paint = now;
     }
+    lastActionTime.paint = now;
   }
 }
 
@@ -1598,6 +1609,10 @@ const semiBuildStackSlider = document.getElementById('semi-build-stack');
 const semiBuildStackValue = document.getElementById('semi-build-stack-value');
 const fullBuildSpeedSlider = document.getElementById('full-build-speed');
 const fullBuildSpeedValue = document.getElementById('full-build-speed-value');
+const fullOutlineCountSlider = document.getElementById('full-outline-count');
+const fullOutlineCountValue = document.getElementById('full-outline-count-value');
+const fullOutlineSeedSlider = document.getElementById('full-outline-seed');
+const fullOutlineSeedValue = document.getElementById('full-outline-seed-value');
 const wireframeToggle = document.getElementById('wireframe-toggle');
 const gridToggle = document.getElementById('grid-toggle');
 const rainToggle = document.getElementById('rain-toggle');
@@ -1620,6 +1635,8 @@ let semiBuildRate = 10;
 let semiBuildStack = 1;
 let fullAutomaticMode = false;
 let fullBuildRate = 10;
+let fullOutlineCount = 1;
+let fullOutlineSeed = 1;
 const rangeInputs = Array.from(document.querySelectorAll('input[type="range"]'));
 
 function updateRangeFill(el) {
@@ -1705,7 +1722,6 @@ function setSemiBuildRate(value) {
 }
 function setSemiBuildStack(value) {
   const clamped = Math.max(1, Math.min(20, Math.round(value)));
-  const changed = semiBuildStack !== clamped;
   semiBuildStack = clamped;
   if (semiBuildStackValue) {
     semiBuildStackValue.textContent = `${semiBuildStack}`;
@@ -1713,12 +1729,6 @@ function setSemiBuildStack(value) {
   if (semiBuildStackSlider) {
     semiBuildStackSlider.value = `${semiBuildStack}`;
     updateRangeFill(semiBuildStackSlider);
-  }
-  if (changed) {
-    semiAutoBuildState.completedSignature = '';
-    if (semiAutomaticMode) {
-      refreshSemiAutomaticBuildPlan();
-    }
   }
 }
 function setFullBuildRate(value) {
@@ -1729,6 +1739,26 @@ function setFullBuildRate(value) {
   if (fullBuildSpeedSlider) {
     fullBuildSpeedSlider.value = `${fullBuildRate}`;
     updateRangeFill(fullBuildSpeedSlider);
+  }
+}
+function setFullOutlineCount(value) {
+  fullOutlineCount = Math.max(1, Math.min(20, Math.round(value)));
+  if (fullOutlineCountValue) {
+    fullOutlineCountValue.textContent = `${fullOutlineCount}`;
+  }
+  if (fullOutlineCountSlider) {
+    fullOutlineCountSlider.value = `${fullOutlineCount}`;
+    updateRangeFill(fullOutlineCountSlider);
+  }
+}
+function setFullOutlineSeed(value) {
+  fullOutlineSeed = Math.max(1, Math.min(1000, Math.round(value)));
+  if (fullOutlineSeedValue) {
+    fullOutlineSeedValue.textContent = `${fullOutlineSeed}`;
+  }
+  if (fullOutlineSeedSlider) {
+    fullOutlineSeedSlider.value = `${fullOutlineSeed}`;
+    updateRangeFill(fullOutlineSeedSlider);
   }
 }
 const tempHSLColor = new THREE.Color();
@@ -1909,6 +1939,16 @@ if (semiBuildStackSlider) {
 if (fullBuildSpeedSlider) {
   fullBuildSpeedSlider.addEventListener('input', (event) => {
     setFullBuildRate(parseFloat(event.target.value));
+  });
+}
+if (fullOutlineCountSlider) {
+  fullOutlineCountSlider.addEventListener('input', (event) => {
+    setFullOutlineCount(parseFloat(event.target.value));
+  });
+}
+if (fullOutlineSeedSlider) {
+  fullOutlineSeedSlider.addEventListener('input', (event) => {
+    setFullOutlineSeed(parseFloat(event.target.value));
   });
 }
 
@@ -2282,6 +2322,8 @@ setAddStack(parseFloat(stackSlider ? stackSlider.value : 1));
 setSemiBuildRate(parseFloat(semiBuildSpeedSlider ? semiBuildSpeedSlider.value : 10));
 setSemiBuildStack(parseFloat(semiBuildStackSlider ? semiBuildStackSlider.value : 1));
 setFullBuildRate(parseFloat(fullBuildSpeedSlider ? fullBuildSpeedSlider.value : 10));
+setFullOutlineCount(parseFloat(fullOutlineCountSlider ? fullOutlineCountSlider.value : 1));
+setFullOutlineSeed(parseFloat(fullOutlineSeedSlider ? fullOutlineSeedSlider.value : 1));
 // Initialize color from HSL defaults or input value
 const activeBlockType =
   blockTypeButtons.find((btn) => btn.classList.contains('active')) || blockTypeButtons[0] || null;
