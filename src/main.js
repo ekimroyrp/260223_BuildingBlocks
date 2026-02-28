@@ -180,9 +180,262 @@ let groundCellGroup = null;
 let gridBorderGroup = null;
 let gridMesh = null;
 const groundCellStates = new Map();
+const groundNeighborOffsets = [
+  { x: 1, z: 0 },
+  { x: -1, z: 0 },
+  { x: 0, z: 1 },
+  { x: 0, z: -1 }
+];
+const semiAutoBuildState = {
+  active: false,
+  signature: '',
+  completedSignature: '',
+  path: [],
+  pathIndex: 0,
+  layerIndex: 0,
+  lastStepTime: null,
+  changedBlocks: false
+};
 
 function groundCellKey(index) {
   return `${index.x}|${index.z}`;
+}
+
+function parseGroundCellKey(key) {
+  const [xRaw, zRaw] = key.split('|');
+  return {
+    x: Number(xRaw),
+    z: Number(zRaw)
+  };
+}
+
+function groundCellSort(a, b) {
+  if (a.z !== b.z) return a.z - b.z;
+  return a.x - b.x;
+}
+
+function getGroundNeighborKeys(key, membershipSet) {
+  const { x, z } = parseGroundCellKey(key);
+  const neighbors = [];
+  for (let i = 0; i < groundNeighborOffsets.length; i += 1) {
+    const offset = groundNeighborOffsets[i];
+    const nextKey = `${x + offset.x}|${z + offset.z}`;
+    if (membershipSet.has(nextKey)) {
+      neighbors.push(nextKey);
+    }
+  }
+  return neighbors;
+}
+
+function traceClosedGroundLoop(startKey, firstNeighborKey, componentSet, expectedLength) {
+  if (!startKey || !firstNeighborKey || !componentSet.has(startKey) || !componentSet.has(firstNeighborKey)) {
+    return null;
+  }
+  const path = [startKey];
+  let prev = startKey;
+  let current = firstNeighborKey;
+
+  while (path.length <= expectedLength) {
+    if (current === startKey) {
+      break;
+    }
+    path.push(current);
+    const neighbors = getGroundNeighborKeys(current, componentSet);
+    if (neighbors.length !== 2) {
+      return null;
+    }
+    const next = neighbors[0] === prev ? neighbors[1] : neighbors[0];
+    if (!next) {
+      return null;
+    }
+    prev = current;
+    current = next;
+  }
+
+  if (current !== startKey) {
+    return null;
+  }
+  if (path.length !== expectedLength) {
+    return null;
+  }
+  return path;
+}
+
+function findClosedGroundLoop() {
+  const paintedKeys = [];
+  groundCellStates.forEach((cellState, key) => {
+    if (cellState && cellState.painted) {
+      paintedKeys.push(key);
+    }
+  });
+  if (paintedKeys.length < 4) {
+    return null;
+  }
+  const paintedSet = new Set(paintedKeys);
+  const visited = new Set();
+  let bestLoop = null;
+
+  for (let i = 0; i < paintedKeys.length; i += 1) {
+    const rootKey = paintedKeys[i];
+    if (visited.has(rootKey)) continue;
+
+    const queue = [rootKey];
+    visited.add(rootKey);
+    const component = [];
+    const componentSet = new Set();
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      component.push(current);
+      componentSet.add(current);
+      const neighbors = getGroundNeighborKeys(current, paintedSet);
+      for (let n = 0; n < neighbors.length; n += 1) {
+        const next = neighbors[n];
+        if (visited.has(next)) continue;
+        visited.add(next);
+        queue.push(next);
+      }
+    }
+
+    if (component.length < 4) continue;
+
+    let isCycle = true;
+    for (let c = 0; c < component.length; c += 1) {
+      const degree = getGroundNeighborKeys(component[c], componentSet).length;
+      if (degree !== 2) {
+        isCycle = false;
+        break;
+      }
+    }
+    if (!isCycle) continue;
+
+    const sortedComponent = component
+      .map((key) => parseGroundCellKey(key))
+      .sort(groundCellSort)
+      .map((index) => groundCellKey(index));
+    const startKey = sortedComponent[0];
+    const startNeighbors = getGroundNeighborKeys(startKey, componentSet).sort();
+    if (startNeighbors.length !== 2) continue;
+
+    let pathKeys = traceClosedGroundLoop(startKey, startNeighbors[0], componentSet, component.length);
+    if (!pathKeys) {
+      pathKeys = traceClosedGroundLoop(startKey, startNeighbors[1], componentSet, component.length);
+    }
+    if (!pathKeys) continue;
+
+    const signature = sortedComponent.join(',');
+    const path = pathKeys.map((key) => parseGroundCellKey(key));
+    if (!bestLoop || path.length > bestLoop.path.length) {
+      bestLoop = { signature, path };
+    }
+  }
+
+  return bestLoop;
+}
+
+function stopSemiAutomaticBuild(options = {}) {
+  const { clearCompleted = false } = options;
+  if (semiAutoBuildState.changedBlocks) {
+    pushHistoryState(snapshotState(), true);
+  }
+  semiAutoBuildState.active = false;
+  semiAutoBuildState.signature = '';
+  semiAutoBuildState.path = [];
+  semiAutoBuildState.pathIndex = 0;
+  semiAutoBuildState.layerIndex = 0;
+  semiAutoBuildState.lastStepTime = null;
+  semiAutoBuildState.changedBlocks = false;
+  if (clearCompleted) {
+    semiAutoBuildState.completedSignature = '';
+  }
+}
+
+function startSemiAutomaticBuild(loop) {
+  if (!loop || !Array.isArray(loop.path) || loop.path.length < 4) return;
+  semiAutoBuildState.active = true;
+  semiAutoBuildState.signature = loop.signature;
+  semiAutoBuildState.path = loop.path.map((index) => ({ x: index.x, z: index.z }));
+  semiAutoBuildState.pathIndex = 0;
+  semiAutoBuildState.layerIndex = 0;
+  semiAutoBuildState.lastStepTime = null;
+  semiAutoBuildState.changedBlocks = false;
+}
+
+function refreshSemiAutomaticBuildPlan() {
+  if (!semiAutomaticMode) {
+    stopSemiAutomaticBuild({ clearCompleted: true });
+    return;
+  }
+  const closedLoop = findClosedGroundLoop();
+  if (!closedLoop) {
+    stopSemiAutomaticBuild({ clearCompleted: true });
+    return;
+  }
+
+  if (semiAutoBuildState.active) {
+    if (semiAutoBuildState.signature === closedLoop.signature) {
+      return;
+    }
+    stopSemiAutomaticBuild();
+  }
+  if (semiAutoBuildState.completedSignature === closedLoop.signature) {
+    return;
+  }
+  startSemiAutomaticBuild(closedLoop);
+}
+
+function setGroundCellPaintState(cellState, painted) {
+  if (!cellState) return false;
+  const nextPainted = Boolean(painted);
+  const changed = Boolean(cellState.painted) !== nextPainted;
+  cellState.painted = nextPainted;
+  const targetColor = nextPainted ? semiAutoGroundPaintColor : gridFillColor;
+  const activeTarget = cellState.colorAnim ? cellState.colorAnim.to : cellState.color;
+  if (!activeTarget.equals(targetColor)) {
+    scheduleGroundCellColorLerp(cellState, targetColor);
+  }
+  return changed;
+}
+
+function updateSemiAutomaticBuild(now) {
+  if (!semiAutoBuildState.active || semiAutoBuildState.path.length === 0) return;
+
+  const interval = Math.max(1, buildInterval);
+  if (semiAutoBuildState.lastStepTime === null) {
+    semiAutoBuildState.lastStepTime = now - interval;
+  }
+  if (now - semiAutoBuildState.lastStepTime < interval) return;
+
+  const targetStack = Math.max(1, Math.min(20, Math.round(addStack)));
+  const maxStepsPerFrame = 16;
+  let steps = 0;
+
+  while (steps < maxStepsPerFrame && now - semiAutoBuildState.lastStepTime >= interval) {
+    const targetCell = semiAutoBuildState.path[semiAutoBuildState.pathIndex];
+    if (!targetCell) break;
+    const targetIndex = {
+      x: targetCell.x,
+      y: semiAutoBuildState.layerIndex,
+      z: targetCell.z
+    };
+    const didAdd = addBlockAt(targetIndex, currentColor, false);
+    if (didAdd) {
+      semiAutoBuildState.changedBlocks = true;
+    }
+
+    semiAutoBuildState.pathIndex += 1;
+    if (semiAutoBuildState.pathIndex >= semiAutoBuildState.path.length) {
+      semiAutoBuildState.pathIndex = 0;
+      semiAutoBuildState.layerIndex += 1;
+      if (semiAutoBuildState.layerIndex >= targetStack) {
+        semiAutoBuildState.completedSignature = semiAutoBuildState.signature;
+        stopSemiAutomaticBuild();
+        break;
+      }
+    }
+    semiAutoBuildState.lastStepTime += interval;
+    steps += 1;
+  }
 }
 
 function disposeMaterial(material) {
@@ -286,11 +539,14 @@ function rebuildGridMeshes() {
         cellState = {
           index: { x, z },
           color: gridFillColor.clone(),
+          painted: false,
           colorAnim: null,
           mesh: null,
           material: null
         };
         groundCellStates.set(key, cellState);
+      } else if (typeof cellState.painted !== 'boolean') {
+        cellState.painted = false;
       }
       const cellMaterial = new THREE.MeshStandardMaterial({
         color: cellState.color.clone(),
@@ -674,6 +930,7 @@ function pushHistoryState(state, clearRedo = false) {
   updateHistoryButtons();
 }
 function undoLast() {
+  stopSemiAutomaticBuild({ clearCompleted: true });
   if (history.length <= 1) return;
   const current = history.pop();
   if (current) {
@@ -684,6 +941,7 @@ function undoLast() {
   updateHistoryButtons();
 }
 function redoLast() {
+  stopSemiAutomaticBuild({ clearCompleted: true });
   if (!redoStack.length) return;
   const snapshot = redoStack.pop();
   if (!snapshot) return;
@@ -699,6 +957,7 @@ function finalizeStrokeHistory() {
   actionDirty = false;
 }
 function resetBlocks() {
+  stopSemiAutomaticBuild({ clearCompleted: true });
   if (!blocks.size) return;
   strokeActive = true;
   actionDirty = true;
@@ -844,15 +1103,21 @@ function scheduleGroundCellColorLerp(cellState, targetColor) {
 }
 
 function resetSemiAutomaticGroundPaint() {
+  let changed = false;
   groundCellStates.forEach((cellState) => {
     if (!cellState) return;
-    scheduleGroundCellColorLerp(cellState, gridFillColor);
+    changed = setGroundCellPaintState(cellState, false) || changed;
   });
+  if (changed) {
+    refreshSemiAutomaticBuildPlan();
+  } else {
+    stopSemiAutomaticBuild({ clearCompleted: true });
+  }
 }
 
 function addBlockAt(index, color = currentColor, markDirty = true) {
   const key = indexKey(index);
-  if (blocks.has(key)) return;
+  if (blocks.has(key)) return false;
   ensureBlockCapacity(blockStates.length + 1);
   const state = createBlockState(index, color);
   blocks.set(key, state);
@@ -867,6 +1132,7 @@ function addBlockAt(index, color = currentColor, markDirty = true) {
   if (markDirty) {
     markHistoryChange();
   }
+  return true;
 }
 
 function removeBlockAt(key) {
@@ -1151,7 +1417,10 @@ function handlePaint() {
     if (now - lastActionTime.paint >= buildInterval) {
       const cellState = groundCellStates.get(hoverState.key);
       if (cellState) {
-        scheduleGroundCellColorLerp(cellState, semiAutoGroundPaintColor);
+        const changed = setGroundCellPaintState(cellState, true);
+        if (changed) {
+          refreshSemiAutomaticBuildPlan();
+        }
       }
       lastActionTime.paint = now;
     }
@@ -1159,7 +1428,10 @@ function handlePaint() {
     if (now - lastActionTime.paint >= buildInterval) {
       const cellState = groundCellStates.get(hoverState.key);
       if (cellState) {
-        scheduleGroundCellColorLerp(cellState, gridFillColor);
+        const changed = setGroundCellPaintState(cellState, false);
+        if (changed) {
+          refreshSemiAutomaticBuildPlan();
+        }
       }
       lastActionTime.paint = now;
     }
@@ -1328,6 +1600,7 @@ function setBuildRate(value) {
 }
 function setAddStack(value) {
   const clamped = Math.max(1, Math.min(20, Math.round(value)));
+  const changed = addStack !== clamped;
   addStack = clamped;
   if (stackValue) {
     stackValue.textContent = `${clamped}`;
@@ -1335,6 +1608,12 @@ function setAddStack(value) {
   if (stackSlider) {
     stackSlider.value = `${clamped}`;
     updateRangeFill(stackSlider);
+  }
+  if (changed) {
+    semiAutoBuildState.completedSignature = '';
+    if (semiAutomaticMode) {
+      refreshSemiAutomaticBuildPlan();
+    }
   }
 }
 function setSemiBuildRate(value) {
@@ -1478,7 +1757,11 @@ function setSemiAutomaticMode(on) {
     pointerState.down = false;
     if (wasActive) {
       resetSemiAutomaticGroundPaint();
+    } else {
+      stopSemiAutomaticBuild({ clearCompleted: true });
     }
+  } else {
+    refreshSemiAutomaticBuildPlan();
   }
   setPreview(null, null);
   hoverDirty = true;
@@ -1850,6 +2133,7 @@ function tick() {
   const now = performance.now();
   const delta = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
+  updateSemiAutomaticBuild(now);
   updateAnimations(delta);
   updateRainOverlay(delta, now * 0.001);
   if (hoverDirty && !pointerState.down) {
