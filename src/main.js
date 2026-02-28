@@ -1928,6 +1928,12 @@ const fullOutlineCountSlider = document.getElementById('full-outline-count');
 const fullOutlineCountValue = document.getElementById('full-outline-count-value');
 const fullOutlineSeedSlider = document.getElementById('full-outline-seed');
 const fullOutlineSeedValue = document.getElementById('full-outline-seed-value');
+const fullMinStackSlider = document.getElementById('full-min-stack');
+const fullMinStackValue = document.getElementById('full-min-stack-value');
+const fullMaxStackSlider = document.getElementById('full-max-stack');
+const fullMaxStackValue = document.getElementById('full-max-stack-value');
+const fullStackSeedSlider = document.getElementById('full-stack-seed');
+const fullStackSeedValue = document.getElementById('full-stack-seed-value');
 const wireframeToggle = document.getElementById('wireframe-toggle');
 const gridToggle = document.getElementById('grid-toggle');
 const rainToggle = document.getElementById('rain-toggle');
@@ -1947,11 +1953,14 @@ let lastSavedColor = '#ffffff';
 let wireframeVisible = Boolean(wireframeToggle && wireframeToggle.checked);
 let gridVisible = Boolean(gridToggle && gridToggle.checked);
 let semiBuildRate = 10;
-let semiBuildStack = 1;
+let semiBuildStack = 3;
 let fullAutomaticMode = false;
 let fullBuildRate = 10;
 let fullOutlineCount = 3;
 let fullOutlineSeed = 1;
+let fullMinStack = 3;
+let fullMaxStack = 10;
+let fullStackSeed = 1;
 const rangeInputs = Array.from(document.querySelectorAll('input[type="range"]'));
 
 function updateRangeFill(el) {
@@ -2080,6 +2089,56 @@ function setFullOutlineSeed(value) {
   }
   if (fullAutomaticMode) {
     runFullAutoGeneration();
+  }
+}
+function setFullMinStack(value) {
+  fullMinStack = Math.max(1, Math.min(20, Math.round(value)));
+  if (fullMinStack > fullMaxStack) {
+    fullMaxStack = fullMinStack;
+  }
+  if (fullMinStackValue) {
+    fullMinStackValue.textContent = `${fullMinStack}`;
+  }
+  if (fullMinStackSlider) {
+    fullMinStackSlider.value = `${fullMinStack}`;
+    updateRangeFill(fullMinStackSlider);
+  }
+  if (fullMaxStackValue) {
+    fullMaxStackValue.textContent = `${fullMaxStack}`;
+  }
+  if (fullMaxStackSlider) {
+    fullMaxStackSlider.value = `${fullMaxStack}`;
+    updateRangeFill(fullMaxStackSlider);
+  }
+}
+function setFullMaxStack(value) {
+  fullMaxStack = Math.max(1, Math.min(20, Math.round(value)));
+  if (fullMaxStack < fullMinStack) {
+    fullMinStack = fullMaxStack;
+  }
+  if (fullMaxStackValue) {
+    fullMaxStackValue.textContent = `${fullMaxStack}`;
+  }
+  if (fullMaxStackSlider) {
+    fullMaxStackSlider.value = `${fullMaxStack}`;
+    updateRangeFill(fullMaxStackSlider);
+  }
+  if (fullMinStackValue) {
+    fullMinStackValue.textContent = `${fullMinStack}`;
+  }
+  if (fullMinStackSlider) {
+    fullMinStackSlider.value = `${fullMinStack}`;
+    updateRangeFill(fullMinStackSlider);
+  }
+}
+function setFullStackSeed(value) {
+  fullStackSeed = Math.max(1, Math.min(1000, Math.round(value)));
+  if (fullStackSeedValue) {
+    fullStackSeedValue.textContent = `${fullStackSeed}`;
+  }
+  if (fullStackSeedSlider) {
+    fullStackSeedSlider.value = `${fullStackSeed}`;
+    updateRangeFill(fullStackSeedSlider);
   }
 }
 const tempHSLColor = new THREE.Color();
@@ -2219,6 +2278,7 @@ function setSemiAutomaticMode(on) {
   }
 }
 function setFullAutomaticMode(on) {
+  const wasActive = fullAutomaticMode;
   fullAutomaticMode = on;
   if (fullAutomaticMode && semiAutomaticMode) {
     setSemiAutomaticMode(false);
@@ -2236,8 +2296,15 @@ function setFullAutomaticMode(on) {
       refreshRangeFills();
     }
   }
-  if (fullAutomaticMode) {
+  if (!fullAutomaticMode && wasActive) {
+    resetSemiAutomaticGroundPaint();
+  } else if (fullAutomaticMode) {
     runFullAutoGeneration();
+  }
+  setPreview(null, null);
+  hoverDirty = true;
+  if (!pointerState.down) {
+    updateHoverTarget();
   }
 }
 if (semiAutomaticButton) {
@@ -2273,6 +2340,21 @@ if (fullOutlineCountSlider) {
 if (fullOutlineSeedSlider) {
   fullOutlineSeedSlider.addEventListener('input', (event) => {
     setFullOutlineSeed(parseFloat(event.target.value));
+  });
+}
+if (fullMinStackSlider) {
+  fullMinStackSlider.addEventListener('input', (event) => {
+    setFullMinStack(parseFloat(event.target.value));
+  });
+}
+if (fullMaxStackSlider) {
+  fullMaxStackSlider.addEventListener('input', (event) => {
+    setFullMaxStack(parseFloat(event.target.value));
+  });
+}
+if (fullStackSeedSlider) {
+  fullStackSeedSlider.addEventListener('input', (event) => {
+    setFullStackSeed(parseFloat(event.target.value));
   });
 }
 
@@ -2644,10 +2726,13 @@ setBlockGap(parseFloat(gapSlider.value) || 0.01);
 setBuildRate(parseFloat(buildSlider.value));
 setAddStack(parseFloat(stackSlider ? stackSlider.value : 1));
 setSemiBuildRate(parseFloat(semiBuildSpeedSlider ? semiBuildSpeedSlider.value : 10));
-setSemiBuildStack(parseFloat(semiBuildStackSlider ? semiBuildStackSlider.value : 1));
+setSemiBuildStack(parseFloat(semiBuildStackSlider ? semiBuildStackSlider.value : 3));
 setFullBuildRate(parseFloat(fullBuildSpeedSlider ? fullBuildSpeedSlider.value : 10));
 setFullOutlineCount(parseFloat(fullOutlineCountSlider ? fullOutlineCountSlider.value : 3));
 setFullOutlineSeed(parseFloat(fullOutlineSeedSlider ? fullOutlineSeedSlider.value : 1));
+setFullMinStack(parseFloat(fullMinStackSlider ? fullMinStackSlider.value : 3));
+setFullMaxStack(parseFloat(fullMaxStackSlider ? fullMaxStackSlider.value : 10));
+setFullStackSeed(parseFloat(fullStackSeedSlider ? fullStackSeedSlider.value : 1));
 // Initialize color from HSL defaults or input value
 const activeBlockType =
   blockTypeButtons.find((btn) => btn.classList.contains('active')) || blockTypeButtons[0] || null;
