@@ -400,7 +400,7 @@ function setGroundCellPaintState(cellState, painted) {
 function updateSemiAutomaticBuild(now) {
   if (!semiAutoBuildState.active || semiAutoBuildState.path.length === 0) return;
 
-  const interval = Math.max(1, buildInterval);
+  const interval = Math.max(1, 1000 / Math.max(0.1, semiBuildRate));
   if (semiAutoBuildState.lastStepTime === null) {
     semiAutoBuildState.lastStepTime = now - interval;
   }
