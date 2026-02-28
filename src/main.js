@@ -397,6 +397,48 @@ function setGroundCellPaintState(cellState, painted) {
   return changed;
 }
 
+function getClosedLoopInteriorCells(path) {
+  if (!Array.isArray(path) || path.length < 4) return [];
+  const boundarySet = new Set(path.map((index) => groundCellKey(index)));
+  const outsideVisited = new Set();
+  const minX = gridMinIndex - 1;
+  const maxX = gridMaxIndex + 1;
+  const minZ = gridMinIndex - 1;
+  const maxZ = gridMaxIndex + 1;
+  const queue = [{ x: minX, z: minZ }];
+  outsideVisited.add(`${minX}|${minZ}`);
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    for (let i = 0; i < groundNeighborOffsets.length; i += 1) {
+      const offset = groundNeighborOffsets[i];
+      const nextX = current.x + offset.x;
+      const nextZ = current.z + offset.z;
+      if (nextX < minX || nextX > maxX || nextZ < minZ || nextZ > maxZ) {
+        continue;
+      }
+      const nextKey = `${nextX}|${nextZ}`;
+      if (outsideVisited.has(nextKey) || boundarySet.has(nextKey)) {
+        continue;
+      }
+      outsideVisited.add(nextKey);
+      queue.push({ x: nextX, z: nextZ });
+    }
+  }
+
+  const interior = [];
+  for (let x = gridMinIndex; x <= gridMaxIndex; x += 1) {
+    for (let z = gridMinIndex; z <= gridMaxIndex; z += 1) {
+      const key = `${x}|${z}`;
+      if (boundarySet.has(key) || outsideVisited.has(key)) {
+        continue;
+      }
+      interior.push({ x, z });
+    }
+  }
+  return interior;
+}
+
 function updateSemiAutomaticBuild(now) {
   if (!semiAutoBuildState.active || semiAutoBuildState.path.length === 0) return;
 
@@ -428,6 +470,15 @@ function updateSemiAutomaticBuild(now) {
       semiAutoBuildState.pathIndex = 0;
       semiAutoBuildState.layerIndex += 1;
       if (semiAutoBuildState.layerIndex >= targetStack) {
+        const topLayerY = Math.max(0, targetStack - 1);
+        const topFillCells = getClosedLoopInteriorCells(semiAutoBuildState.path);
+        for (let i = 0; i < topFillCells.length; i += 1) {
+          const cell = topFillCells[i];
+          const didFillAdd = addBlockAt({ x: cell.x, y: topLayerY, z: cell.z }, currentColor, false);
+          if (didFillAdd) {
+            semiAutoBuildState.changedBlocks = true;
+          }
+        }
         semiAutoBuildState.completedSignature = semiAutoBuildState.signature;
         stopSemiAutomaticBuild();
         break;
